@@ -327,7 +327,7 @@ function simulate(scene, opts = {}) {
       if (isPass(d.id,s) || s.inflowRate <= EPS) continue;
       if (!s.reachedSpill && s.volume >= d.spillVolume - EPS) {
         s.volume = d.spillVolume; s.reachedSpill = true; pd.tSpill = clock;
-        if (d.isFull) { s.reachedRim = true; pd.tFull = clock; }
+        if (d.isFull) { pd.tFull = clock; if (!hasLinks(d.id)) s.reachedRim = true; }
         events.push({ t:clock, ditch:d.id, event:d.isFull?'full':'spill',
           detail:d.isFull?`full at rim ${fmt(d.rimZ)} m`:`spills at notch ${fmt(d.spillZ)} m → routes downstream` });
         if (d.isFull && !hasLinks(d.id))
