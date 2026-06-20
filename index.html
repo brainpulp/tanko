@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tanko — 3D Ditch Cascade &amp; Fill-Time Calculator</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c2230; --line:#2a3342;
+    --ink:#e6edf3; --muted:#8b98a8; --accent:#4aa3ff; --water:#3aa0ff;
+    --good:#3fb950; --warn:#d29922; --bad:#f85149; --spill:#a371f7;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px}
+  #app{display:grid;grid-template-columns:330px 1fr 360px;grid-template-rows:100vh;height:100vh}
+  .col{height:100vh;overflow:auto;border-right:1px solid var(--line)}
+  .col:last-child{border-right:none;border-left:1px solid var(--line)}
+  .pad{padding:12px}
+  h1{font-size:15px;margin:0 0 2px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px;font-weight:600}
+  h2:first-of-type{margin-top:10px}
+  .sub{color:var(--muted);font-size:11px;margin:0 0 6px}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
+  button.sm{padding:2px 7px;font-size:11px}
+  button.active{background:var(--accent);color:#04101f;border-color:var(--accent);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:3px 5px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+  input,select{background:#0b0f15;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:3px 5px;font-size:12px;width:100%;font-family:var(--mono)}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  td input{width:100%}
+  .num{font-family:var(--mono);text-align:right}
+  .grid6{display:grid;grid-template-columns:1.1fr repeat(6,1fr) auto;gap:4px;align-items:center}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  textarea{width:100%;height:280px;background:#0b0f15;color:var(--ink);border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:11.5px;padding:8px;resize:vertical}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--muted);font-size:12px;padding:4px 0}
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;font-family:var(--mono)}
+  .s-dry{background:#21262d;color:var(--muted)}
+  .s-filling{background:#10324f;color:#7cc4ff}
+  .s-spilling{background:#2a1d4a;color:#c4a8ff}
+  .s-full{background:#0f3d22;color:#5edc84}
+  .s-rim-overflow{background:#46180f;color:#ff9a8f}
+  #view{position:relative;height:100%;display:flex;flex-direction:column}
+  #canvasWrap{flex:1;position:relative;min-height:0}
+  canvas{display:block;width:100%;height:100%}
+  #cammenu{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:5}
+  #hud{position:absolute;top:10px;right:10px;z-index:5;background:rgba(13,17,23,.78);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.55;min-width:150px}
+  #hud b{color:var(--accent)}
+  #transport{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:flex;flex-direction:column;gap:7px}
+  #scrubrow{display:flex;align-items:center;gap:10px}
+  #scrub{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:linear-gradient(90deg,#1f6feb33,#1f6feb33);outline:none}
+  #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #04101f}
+  #scrub::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #04101f}
+  #track{position:relative;height:14px;margin:0 2px}
+  .tick{position:absolute;top:0;width:2px;height:10px;background:var(--spill);border-radius:1px;transform:translateX(-1px)}
+  .tick.start{background:var(--muted);height:7px}
+  .tick.rim-overflow{background:var(--bad)}
+  .clock{font-family:var(--mono);font-size:14px;min-width:120px}
+  .clock .lbl{color:var(--muted);font-size:10px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10.5px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle}
+  .ev{display:grid;grid-template-columns:62px 26px 1fr;gap:6px;padding:3px 0;border-bottom:1px solid var(--line);font-size:11.5px;align-items:baseline}
+  .ev .t{font-family:var(--mono);color:var(--accent)}
+  .ev .d{font-family:var(--mono);font-weight:700}
+  .ev .x{color:var(--muted)}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)}
+  .kv b{font-family:var(--mono)}
+  .warnbox{background:#46180f;border:1px solid #6e2419;color:#ffb3a8;padding:8px;border-radius:6px;font-size:11.5px;margin-top:8px;white-space:pre-wrap}
+  .testbar{font-size:11.5px;font-family:var(--mono);padding:6px 8px;border-radius:6px;margin-top:6px}
+  .test-pass{background:#0f3d22;color:#7ee2a0}
+  .test-fail{background:#46180f;color:#ff9a8f}
+  .scene-tabs{display:flex;gap:6px;margin-bottom:8px}
+  code{font-family:var(--mono);background:#0b0f15;padding:1px 4px;border-radius:4px}
+  .hint{color:var(--muted);font-size:10.5px;margin-top:2px}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="app">
+  <!-- LEFT: editor -->
+  <div class="col" id="left">
+    <div class="pad">
+      <h1>Tanko</h1>
+      <p class="sub">3D ditch cascade &amp; fill-time calculator</p>
+      <div class="scene-tabs">
+        <button class="sm" data-preset="worked">Worked example</button>
+        <button class="sm" data-preset="cascade">3-step cascade</button>
+        <button class="sm" data-preset="split">Split + waste</button>
+      </div>
+
+      <h2>Ditches</h2>
+      <div id="ditchHead" class="grid6" style="color:var(--muted);font-size:10px;margin-bottom:4px">
+        <div>id / name</div><div class="num">x</div><div class="num">y</div><div class="num">len</div><div class="num">wid</div><div class="num">depth</div><div class="num">floorZ</div><div></div>
+      </div>
+      <div id="ditchRows"></div>
+      <div class="row-actions"><button class="sm" id="addDitch">+ ditch</button></div>
+
+      <h2>Spill links</h2>
+      <div id="linkRows"></div>
+      <div class="row-actions"><button class="sm" id="addLink">+ link</button></div>
+      <p class="hint">spillZ blank = rim (overflow the top edge). A lower value = weir/notch. split blank = even.</p>
+
+      <h2>Inflows (L/s)</h2>
+      <div id="inflowRows"></div>
+      <div class="row-actions"><button class="sm" id="addInflow">+ inflow</button></div>
+
+      <h2>Derived</h2>
+      <table id="derived"><tbody></tbody></table>
+
+      <details id="jsonWrap">
+        <summary>Raw JSON (source of truth — edit &amp; apply)</summary>
+        <textarea id="json" spellcheck="false"></textarea>
+        <div class="row-actions">
+          <button class="sm primary" id="applyJson">Apply JSON</button>
+          <button class="sm" id="copyJson">Copy</button>
+        </div>
+        <div id="jsonErr" class="warnbox" style="display:none"></div>
+      </details>
+
+      <div id="testbar"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: viewport -->
+  <div class="col" id="center" style="overflow:hidden">
+    <div id="view">
+      <div id="canvasWrap">
+        <canvas id="cv"></canvas>
+        <div id="cammenu">
+          <button class="sm" data-cam="top">Top</button>
+          <button class="sm" data-cam="sideY">Side Y</button>
+          <button class="sm" data-cam="sideX">Side X</button>
+          <button class="sm active" data-cam="iso">3D</button>
+        </div>
+        <div id="hud"></div>
+      </div>
+      <div id="transport">
+        <div id="scrubrow">
+          <button id="play" class="primary" style="min-width:64px">▶ Play</button>
+          <div style="flex:1">
+            <input type="range" id="scrub" min="0" max="1000" value="0" step="1">
+            <div id="track"></div>
+          </div>
+          <div class="clock"><div class="lbl">CLOCK</div><span id="clock">0 s</span></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--muted)"></i>start</span>
+          <span><i style="background:var(--spill)"></i>spill</span>
+          <span><i style="background:var(--good)"></i>full</span>
+          <span><i style="background:var(--bad)"></i>rim-overflow / waste</span>
+          <span style="margin-left:auto" id="speedwrap">speed
+            <select id="speed" style="width:auto;display:inline-block">
+              <option value="60">60×</option><option value="300" selected>300×</option>
+              <option value="1800">1800×</option><option value="10000">10000×</option>
+            </select>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div class="col" id="right">
+    <div class="pad">
+      <h2>System totals</h2>
+      <div id="totals"></div>
+      <div id="warn"></div>
+
+      <h2>Fill order</h2>
+      <table id="fillOrder"><tbody></tbody></table>
+
+      <h2>Per-ditch results</h2>
+      <table id="perDitch">
+        <thead><tr><th>id</th><th>status</th><th>t&#8203;start</th><th>t&#8203;spill</th><th>t&#8203;full</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h2>Event timeline</h2>
+      <div id="events"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================================================
+   COMPUTE ENGINE — pure function simulate(scene) -> result
+   No rendering inside. Unit-tested against worked example.
+   ============================================================ */
+function simulate(scene, opts = {}) {
+  const L_TO_M3 = 0.001;
+  const maxEvents = opts.maxEvents ?? 10000;
+  const EPS = 1e-9;
+
+  const ditches = scene.ditches.map(d => {
+    const footprint = d.length * d.width;
+    const rimZ = d.floorZ + d.depth;
+    const capacity = footprint * d.depth;
+    return { ...d, footprint, rimZ, capacity };
+  });
+  const byId = new Map(ditches.map(d => [d.id, d]));
+
+  const linksByFrom = new Map();
+  const links = scene.links.map((lk, i) => {
+    if (!byId.get(lk.from)) throw new Error(`Link ${i}: unknown from-ditch "${lk.from}"`);
+    if (lk.to !== 'OUT' && !byId.get(lk.to)) throw new Error(`Link ${i}: unknown to-ditch "${lk.to}"`);
+    const link = { idx:i, from:lk.from, to:lk.to, spillZ:(lk.spillZ ?? null), split:lk.split, _frac:0 };
+    if (!linksByFrom.has(lk.from)) linksByFrom.set(lk.from, []);
+    linksByFrom.get(lk.from).push(link);
+    return link;
+  });
+  for (const d of ditches) {
+    const outs = linksByFrom.get(d.id) || [];
+    let spillZ = d.rimZ;
+    if (outs.length) spillZ = Math.min(...outs.map(o => o.spillZ != null ? o.spillZ : d.rimZ));
+    d.spillZ = Math.min(Math.max(spillZ, d.floorZ), d.rimZ);
+    d.spillVolume = d.footprint * (d.spillZ - d.floorZ);
+    d.isFull = d.spillVolume >= d.capacity - EPS;
+    const anyExplicit = outs.some(o => Number.isFinite(o.split));
+    const explicitSum = outs.reduce((s,o)=>s+(Number.isFinite(o.split)?o.split:0),0);
+    outs.forEach(o => {
+      if (anyExplicit && explicitSum > 0) o._frac = (Number.isFinite(o.split)?o.split:0)/explicitSum;
+      else o._frac = outs.length ? 1/outs.length : 0;
+    });
+  }
+
+  const baseInflow = new Map(ditches.map(d => [d.id, 0]));
+  for (const inf of scene.inflows) {
+    if (!byId.get(inf.to)) throw new Error(`Inflow: unknown ditch "${inf.to}"`);
+    baseInflow.set(inf.to, baseInflow.get(inf.to) + inf.rate * L_TO_M3);
+  }
+
+  const topo = topoSort(ditches, links);
+
+  const st = new Map(ditches.map(d => [d.id, {volume:0, inflowRate:0, reachedSpill:false, reachedRim:false, status:'dry'}]));
+  const perDitch = new Map(ditches.map(d => [d.id, {
+    id:d.id, name:d.name, footprint:d.footprint, capacity:d.capacity,
+    spillZ:d.spillZ, rimZ:d.rimZ, floorZ:d.floorZ, length:d.length, width:d.width, depth:d.depth,
+    x:d.x, y:d.y, spillVolume:d.spillVolume, isFull:d.isFull,
+    capacityToSpill:d.spillVolume, capacityToRim:d.capacity,
+    tStart:null, tSpill:null, tFull:null, status:'dry',
+  }]));
+
+  const hasLinks = id => (linksByFrom.get(id)||[]).length > 0;
+  const isPass = (id,s) => (s.reachedSpill && hasLinks(id)) || s.reachedRim;
+
+  function propagate() {
+    for (const d of ditches) st.get(d.id).inflowRate = baseInflow.get(d.id);
+    const linkFlow = new Array(links.length).fill(0);
+    let waste = 0;
+    for (const id of topo) {
+      const s = st.get(id);
+      if (!isPass(id,s)) continue;
+      const through = s.inflowRate;
+      const outs = linksByFrom.get(id) || [];
+      if (!outs.length) { waste += through; continue; }
+      for (const o of outs) {
+        const f = through * o._frac;
+        linkFlow[o.idx] = f;
+        if (o.to === 'OUT') waste += f; else st.get(o.to).inflowRate += f;
+      }
+    }
+    return { linkFlow, waste };
+  }
+
+  function setStatus() {
+    for (const d of ditches) {
+      const s = st.get(d.id);
+      let status = 'dry';
+      if (s.reachedRim) status = 'rim-overflow';
+      else if (s.reachedSpill && hasLinks(d.id)) status = d.isFull ? 'full' : 'spilling';
+      else if (s.inflowRate > EPS || s.volume > EPS) status = 'filling';
+      s.status = status; perDitch.get(d.id).status = status;
+    }
+  }
+
+  const events = [], frames = [];
+  let clock = 0;
+  function snapshot() {
+    const { linkFlow, waste } = propagate();
+    const vol = {}, inRate = {}; let total = 0;
+    for (const d of ditches){ const s=st.get(d.id); vol[d.id]=s.volume; inRate[d.id]=s.inflowRate; total+=s.volume; }
+    frames.push({ t:clock, vol, inRate, linkFlow:linkFlow.slice(), waste, total });
+  }
+
+  propagate(); setStatus();
+  for (const d of ditches) if (st.get(d.id).inflowRate > EPS) {
+    perDitch.get(d.id).tStart = 0;
+    events.push({ t:0, ditch:d.id, event:'start', detail:`inflow begins (${fmtRate(st.get(d.id).inflowRate)})` });
+  }
+  snapshot();
+
+  let guard = 0;
+  while (guard++ < maxEvents) {
+    let dt = Infinity;
+    for (const d of ditches) {
+      const s = st.get(d.id);
+      if (isPass(d.id,s) || s.inflowRate <= EPS) continue;
+      const target = s.reachedSpill ? d.capacity : d.spillVolume;
+      const rem = target - s.volume;
+      if (rem <= EPS) continue;
+      dt = Math.min(dt, rem / s.inflowRate);
+    }
+    if (!Number.isFinite(dt)) break;
+
+    for (const d of ditches) {
+      const s = st.get(d.id);
+      if (isPass(d.id,s) || s.inflowRate <= EPS) continue;
+      s.volume += s.inflowRate * dt;
+    }
+    clock += dt;
+
+    for (const d of ditches) {
+      const s = st.get(d.id), pd = perDitch.get(d.id);
+      if (isPass(d.id,s) || s.inflowRate <= EPS) continue;
+      if (!s.reachedSpill && s.volume >= d.spillVolume - EPS) {
+        s.volume = d.spillVolume; s.reachedSpill = true; pd.tSpill = clock;
+        if (d.isFull) { s.reachedRim = true; pd.tFull = clock; }
+        events.push({ t:clock, ditch:d.id, event:d.isFull?'full':'spill',
+          detail:d.isFull?`full at rim ${fmt(d.rimZ)} m`:`spills at notch ${fmt(d.spillZ)} m → routes downstream` });
+        if (d.isFull && !hasLinks(d.id))
+          events.push({ t:clock, ditch:d.id, event:'rim-overflow', detail:`no outlet — overflowing to waste` });
+      } else if (s.reachedSpill && !s.reachedRim && s.volume >= d.capacity - EPS) {
+        s.volume = d.capacity; s.reachedRim = true; pd.tFull = clock;
+        events.push({ t:clock, ditch:d.id, event:'rim-overflow', detail:`backs up to rim ${fmt(d.rimZ)} m → excess to waste` });
+      }
+    }
+
+    setStatus(); propagate();
+    for (const d of ditches) {
+      const pd = perDitch.get(d.id), s = st.get(d.id);
+      if (pd.tStart == null && s.inflowRate > EPS) {
+        pd.tStart = clock;
+        events.push({ t:clock, ditch:d.id, event:'start', detail:`receives flow (${fmtRate(s.inflowRate)})` });
+      }
+    }
+    setStatus(); snapshot();
+  }
+
+  const perDitchArr = ditches.map(d => perDitch.get(d.id));
+  const fillOrder = perDitchArr.filter(p=>p.tSpill!=null).sort((a,b)=>a.tSpill-b.tSpill).map(p=>p.id);
+  const last = frames[frames.length-1];
+  const reachable = perDitchArr.filter(p=>p.tStart!=null);
+  const allSpill = reachable.length && reachable.every(p=>p.tSpill!=null);
+  const totals = {
+    horizon: last ? last.t : 0,
+    timeAllSpill: allSpill ? Math.max(...reachable.map(p=>p.tSpill)) : null,
+    totalWaterFinal: last ? last.total : 0,
+    wasteRateFinal: last ? last.waste : 0,
+    reachableCount: reachable.length, ditchCount: ditches.length,
+  };
+  return { events:events.sort((a,b)=>a.t-b.t), perDitch:perDitchArr, fillOrder, totals, frames, links, ditches };
+}
+
+function topoSort(ditches, links) {
+  const ids = ditches.map(d=>d.id);
+  const indeg = new Map(ids.map(i=>[i,0])), adj = new Map(ids.map(i=>[i,[]]));
+  for (const lk of links) { if (lk.to==='OUT') continue; adj.get(lk.from).push(lk.to); indeg.set(lk.to, indeg.get(lk.to)+1); }
+  const q = ids.filter(i=>indeg.get(i)===0), order=[];
+  while (q.length){ const n=q.shift(); order.push(n); for (const m of adj.get(n)){ indeg.set(m,indeg.get(m)-1); if(indeg.get(m)===0)q.push(m);} }
+  if (order.length!==ids.length) for (const i of ids) if(!order.includes(i)) order.push(i);
+  return order;
+}
+const fmt = n => (Math.abs(n)<1e-9?0:+n.toFixed(3));
+const fmtRate = r => `${(r*1000).toFixed(2)} L/s`;
+
+/* sampling helpers for the renderer (volume continuous, rates piecewise-constant) */
+function volumeAt(frames, id, t) {
+  if (!frames.length) return 0;
+  if (t <= frames[0].t) return frames[0].vol[id] ?? 0;
+  if (t >= frames[frames.length-1].t) return frames[frames.length-1].vol[id] ?? 0;
+  for (let i=0;i<frames.length-1;i++){
+    const a=frames[i], b=frames[i+1];
+    if (t>=a.t && t<=b.t){ const f=(b.t-a.t)?(t-a.t)/(b.t-a.t):0; return (a.vol[id]??0)+f*((b.vol[id]??0)-(a.vol[id]??0)); }
+  }
+  return frames[frames.length-1].vol[id] ?? 0;
+}
+function frameAt(frames, t){ let fr=frames[0]; for (const f of frames){ if (f.t<=t+1e-9) fr=f; else break; } return fr; }
+function totalAt(frames, t){
+  if(!frames.length) return 0;
+  if(t<=frames[0].t) return frames[0].total;
+  if(t>=frames[frames.length-1].t) return frames[frames.length-1].total;
+  for(let i=0;i<frames.length-1;i++){ const a=frames[i],b=frames[i+1]; if(t>=a.t&&t<=b.t){const f=(b.t-a.t)?(t-a.t)/(b.t-a.t):0; return a.total+f*(b.total-a.total);} }
+  return frames[frames.length-1].total;
+}
+
+/* ============================================================
+   SCENES
+   ============================================================ */
+const PRESETS = {
+  worked: {
+    ditches:[
+      {id:'A',name:'North trench',x:0,y:0,length:10,width:1,depth:1,floorZ:0},
+      {id:'B',name:'South trench',x:0,y:3,length:10,width:1,depth:1,floorZ:-0.5},
+    ],
+    links:[{from:'A',to:'B'},{from:'B',to:'OUT'}],
+    inflows:[{to:'A',rate:5}],
+  },
+  cascade: {
+    ditches:[
+      {id:'A',name:'Top',x:0,y:0,length:6,width:2,depth:1,floorZ:2},
+      {id:'B',name:'Mid',x:7,y:0,length:6,width:2,depth:1.2,floorZ:1},
+      {id:'C',name:'Low',x:14,y:0,length:8,width:3,depth:1.5,floorZ:-0.5},
+    ],
+    links:[{from:'A',to:'B'},{from:'B',to:'C'},{from:'C',to:'OUT'}],
+    inflows:[{to:'A',rate:12}],
+  },
+  split: {
+    ditches:[
+      {id:'A',name:'Source',x:0,y:4,length:4,width:2,depth:1,floorZ:2},
+      {id:'B',name:'Left',x:6,y:0,length:5,width:2,depth:1,floorZ:0.5},
+      {id:'C',name:'Right',x:6,y:8,length:3,width:2,depth:0.8,floorZ:1},
+    ],
+    links:[{from:'A',to:'B',split:0.6},{from:'A',to:'C',split:0.4},{from:'B',to:'OUT'}],
+    inflows:[{to:'A',rate:20}],
+  },
+};
+
+/* ============================================================
+   STATE + UI
+   ============================================================ */
+let scene = clone(PRESETS.worked);
+let result = null;
+let curT = 0, playing = false, lastTS = 0;
+let camMode = 'iso';
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function fmtTime(s){
+  if (s==null) return '—';
+  if (s<90) return s.toFixed(s<10?2:1)+' s';
+  if (s<5400) return (s/60).toFixed(1)+' min';
+  return (s/3600).toFixed(2)+' h';
+}
+const $ = sel => document.querySelector(sel);
+
+function recompute(){
+  try { result = simulate(scene); $('#jsonErr').style.display='none'; }
+  catch(e){ result=null; showWarn(e.message); return; }
+  if (curT > result.totals.horizon) curT = 0;
+  buildMeshes();
+  renderResults();
+  renderEditor();
+  $('#json').value = JSON.stringify(scene, null, 2);
+  setTime(Math.min(curT, result.totals.horizon||0));
+}
+
+/* ---------- editor rendering ---------- */
+function renderEditor(){
+  const dr = $('#ditchRows'); dr.innerHTML='';
+  scene.ditches.forEach((d,i)=>{
+    const row = document.createElement('div'); row.className='grid6'; row.style.marginBottom='4px';
+    row.innerHTML = `
+      <div><input data-k="id" value="${d.id}" style="font-weight:700"><input data-k="name" value="${d.name??''}" placeholder="name" style="margin-top:2px;font-size:10px"></div>
+      ${['x','y','length','width','depth','floorZ'].map(k=>`<input class="num" data-k="${k}" value="${d.x!==undefined?d[k]:''}">`).join('')}
+      <button class="sm" data-del="${i}">✕</button>`;
+    row.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('change',()=>{
+        const k=inp.dataset.k; scene.ditches[i][k] = (k==='id'||k==='name')?inp.value:num(inp.value);
+        recompute();
+      });
+    });
+    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.ditches.splice(i,1); recompute(); });
+    dr.appendChild(row);
+  });
+
+  const lr = $('#linkRows'); lr.innerHTML='';
+  const ids = scene.ditches.map(d=>d.id);
+  scene.links.forEach((lk,i)=>{
+    const row=document.createElement('div'); row.style.display='grid';
+    row.style.gridTemplateColumns='1fr auto 1fr 1fr 1fr auto'; row.style.gap='4px'; row.style.alignItems='center'; row.style.marginBottom='4px';
+    row.innerHTML=`
+      <select data-k="from">${ids.map(id=>`<option ${id===lk.from?'selected':''}>${id}</option>`).join('')}</select>
+      <span style="color:var(--muted)">→</span>
+      <select data-k="to">${[...ids,'OUT'].map(id=>`<option ${id===lk.to?'selected':''}>${id}</option>`).join('')}</select>
+      <input class="num" data-k="spillZ" placeholder="rim" value="${lk.spillZ??''}">
+      <input class="num" data-k="split" placeholder="even" value="${lk.split??''}">
+      <button class="sm" data-del="${i}">✕</button>`;
+    row.querySelectorAll('[data-k]').forEach(inp=>inp.addEventListener('change',()=>{
+      const k=inp.dataset.k;
+      if(k==='from'||k==='to') scene.links[i][k]=inp.value;
+      else { const v=inp.value.trim(); if(v==='') delete scene.links[i][k]; else scene.links[i][k]=num(v); }
+      recompute();
+    }));
+    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.links.splice(i,1); recompute(); });
+    lr.appendChild(row);
+  });
+
+  const ir=$('#inflowRows'); ir.innerHTML='';
+  scene.inflows.forEach((inf,i)=>{
+    const row=document.createElement('div'); row.style.display='grid';
+    row.style.gridTemplateColumns='1fr 1fr auto'; row.style.gap='4px'; row.style.alignItems='center'; row.style.marginBottom='4px';
+    row.innerHTML=`
+      <select data-k="to">${ids.map(id=>`<option ${id===inf.to?'selected':''}>${id}</option>`).join('')}</select>
+      <input class="num" data-k="rate" value="${inf.rate}">
+      <button class="sm" data-del="${i}">✕</button>`;
+    row.querySelectorAll('[data-k]').forEach(inp=>inp.addEventListener('change',()=>{
+      const k=inp.dataset.k; scene.inflows[i][k]= k==='to'?inp.value:num(inp.value); recompute();
+    }));
+    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.inflows.splice(i,1); recompute(); });
+    ir.appendChild(row);
+  });
+
+  // derived
+  const tb=$('#derived').querySelector('tbody'); tb.innerHTML=`<tr style="color:var(--muted)"><th>id</th><th class="num">footprint</th><th class="num">→spill</th><th class="num">→rim</th></tr>`;
+  (result?result.perDitch:[]).forEach(p=>{
+    tb.innerHTML+=`<tr><td><b>${p.id}</b></td><td class="num">${p.footprint.toFixed(2)} m²</td><td class="num">${p.capacityToSpill.toFixed(2)} m³</td><td class="num">${p.capacityToRim.toFixed(2)} m³</td></tr>`;
+  });
+}
+const num = v => { const n=parseFloat(v); return Number.isFinite(n)?n:0; };
+
+/* ---------- results rendering ---------- */
+function renderResults(){
+  if(!result) return;
+  const t=result.totals;
+  $('#totals').innerHTML = `
+    <div class="kv"><span>Ditches reached / total</span><b>${t.reachableCount} / ${t.ditchCount}</b></div>
+    <div class="kv"><span>All reachable spill by</span><b>${fmtTime(t.timeAllSpill)}</b></div>
+    <div class="kv"><span>Sim horizon</span><b>${fmtTime(t.horizon)}</b></div>
+    <div class="kv"><span>Water in system (final)</span><b>${t.totalWaterFinal.toFixed(2)} m³</b></div>
+    <div class="kv"><span>Waste rate (final)</span><b>${(t.wasteRateFinal*1000).toFixed(2)} L/s</b></div>`;
+
+  const overflowers = result.perDitch.filter(p=>p.status==='rim-overflow');
+  $('#warn').innerHTML = overflowers.length
+    ? `<div class="warnbox">⚠ Rim-overflow (wasting): ${overflowers.map(p=>p.id).join(', ')} — incoming exceeds outlet capacity; excess routed to waste.</div>` : '';
+
+  const fo=$('#fillOrder').querySelector('tbody'); fo.innerHTML='';
+  if(!result.fillOrder.length) fo.innerHTML=`<tr><td colspan="3" style="color:var(--muted)">no ditch reaches spill</td></tr>`;
+  result.fillOrder.forEach((id,i)=>{
+    const p=result.perDitch.find(x=>x.id===id);
+    fo.innerHTML+=`<tr><td>${i+1}</td><td><b>${id}</b> ${p.name?`<span style="color:var(--muted)">${p.name}</span>`:''}</td><td class="num">${fmtTime(p.tSpill)}</td></tr>`;
+  });
+
+  const pd=$('#perDitch').querySelector('tbody'); pd.innerHTML='';
+  result.perDitch.forEach(p=>{
+    pd.innerHTML+=`<tr><td><b>${p.id}</b></td><td><span class="pill s-${p.status}">${p.status}</span></td><td class="num">${fmtTime(p.tStart)}</td><td class="num">${fmtTime(p.tSpill)}</td><td class="num">${fmtTime(p.tFull)}</td></tr>`;
+  });
+
+  const ev=$('#events'); ev.innerHTML='';
+  result.events.forEach(e=>{
+    ev.innerHTML+=`<div class="ev"><span class="t">${fmtTime(e.t)}</span><span class="d">${e.ditch}</span><span><span class="pill s-${statusForEvent(e.event)}">${e.event}</span> <span class="x">${e.detail}</span></span></div>`;
+  });
+
+  // timeline ticks
+  const track=$('#track'); track.innerHTML='';
+  const H=t.horizon||1;
+  result.events.forEach(e=>{
+    const tick=document.createElement('div');
+    tick.className='tick '+(e.event==='start'?'start':e.event==='rim-overflow'?'rim-overflow':'');
+    tick.style.left=(100*e.t/H)+'%'; tick.title=`${fmtTime(e.t)} — ${e.ditch} ${e.event}`;
+    track.appendChild(tick);
+  });
+  $('#scrub').max = String(Math.max(1, Math.round(H)));
+}
+function statusForEvent(ev){ return ev==='spill'?'spilling':ev==='start'?'filling':ev==='full'?'full':'rim-overflow'; }
+
+/* ============================================================
+   THREE.JS RENDERER
+   ============================================================ */
+const canvas=$('#cv');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const three={scene:new THREE.Scene()};
+three.scene.background=new THREE.Color(0x0b0f15);
+three.scene.add(new THREE.AmbientLight(0xffffff,0.75));
+const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(1,2,1.5); three.scene.add(dir);
+const grid=new THREE.GridHelper(60,60,0x223047,0x16202e); grid.material.opacity=0.5; grid.material.transparent=true; three.scene.add(grid);
+
+let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+
+let ditchGroup=new THREE.Group(); three.scene.add(ditchGroup);
+let waterMeshes={}, ditchMeshes={}, labelSprites={}, linkObjs=[];
+let bounds=null;
+
+// world mapping: planX->X, elevation->Y, planY->Z
+function buildMeshes(){
+  linkObjs.forEach(l=>three.scene.remove(l.arrow)); // drop stale arrows (live in scene, not group)
+  ditchGroup.clear(); waterMeshes={}; ditchMeshes={}; labelSprites={}; linkObjs=[];
+  if(!result) return;
+
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const d of result.ditches){
+    minX=Math.min(minX,d.x); maxX=Math.max(maxX,d.x+d.length);
+    minZ=Math.min(minZ,d.y); maxZ=Math.max(maxZ,d.y+d.width);
+    minY=Math.min(minY,d.floorZ); maxY=Math.max(maxY,d.rimZ);
+  }
+  bounds={minX,maxX,minY,maxY,minZ,maxZ,
+    cx:(minX+maxX)/2, cy:(minY+maxY)/2, cz:(minZ+maxZ)/2,
+    sx:maxX-minX||1, sy:maxY-minY||1, sz:maxZ-minZ||1};
+
+  for(const d of result.ditches){
+    const g=new THREE.Group();
+    g.position.set(d.x+d.length/2, 0, d.y+d.width/2); // center in X,Z; Y absolute
+    // ditch walls (open-top box) as edges
+    const box=new THREE.BoxGeometry(d.length,d.depth,d.width);
+    const edges=new THREE.EdgesGeometry(box);
+    const wall=new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color:0x5b6b80}));
+    wall.position.y=d.floorZ+d.depth/2; g.add(wall);
+    // floor (thin solid)
+    const floor=new THREE.Mesh(new THREE.BoxGeometry(d.length,0.01,d.width),
+      new THREE.MeshBasicMaterial({color:0x1b2433})); floor.position.y=d.floorZ; g.add(floor);
+    // spill notch marker (a colored edge line at spillZ if < rim)
+    if(d.spillZ < d.rimZ-1e-6){
+      const notch=new THREE.Mesh(new THREE.BoxGeometry(d.length*1.01,0.02,d.width*1.01),
+        new THREE.MeshBasicMaterial({color:0xa371f7})); notch.position.y=d.spillZ; g.add(notch);
+    }
+    // water box (unit height, scaled each frame)
+    const wgeo=new THREE.BoxGeometry(d.length*0.96,1,d.width*0.96);
+    const wmat=new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:0.5});
+    const water=new THREE.Mesh(wgeo,wmat); water.visible=false; g.add(water);
+    waterMeshes[d.id]={mesh:water,d};
+    // label
+    const spr=makeLabel(d.id); spr.position.set(0,d.rimZ+d.depth*0.35+0.25,0); g.add(spr);
+    labelSprites[d.id]=spr;
+    ditchMeshes[d.id]=g; ditchGroup.add(g);
+  }
+
+  // links as arrows
+  result.links.forEach((lk,i)=>{
+    const from=result.ditches.find(d=>d.id===lk.from);
+    const to = lk.to==='OUT'?null:result.ditches.find(d=>d.id===lk.to);
+    const sZ = lk.spillZ!=null?lk.spillZ:from.rimZ;
+    const start=new THREE.Vector3(from.x+from.length/2, sZ, from.y+from.width/2);
+    let end;
+    if(to) end=new THREE.Vector3(to.x+to.length/2, to.rimZ, to.y+to.width/2);
+    else end=start.clone().add(new THREE.Vector3(0, 0.6, from.width));
+    const d3=new THREE.Vector3().subVectors(end,start);
+    const len=d3.length()||1;
+    const arrow=new THREE.ArrowHelper(d3.clone().normalize(),start,len,0x445063,Math.min(0.6,len*0.25),Math.min(0.35,len*0.15));
+    three.scene.add(arrow); linkObjs.push({arrow,idx:i});
+  });
+  applyCam(camMode);
+}
+
+function makeLabel(text){
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=64;
+  const ctx=cv.getContext('2d');
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
+  spr.scale.set(2.6,0.65,1); spr.userData={cv,ctx,texture:spr.material.map};
+  drawLabel(spr,text,''); return spr;
+}
+function drawLabel(spr,line1,line2){
+  const {cv,ctx,texture}=spr.userData;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle='rgba(13,17,23,0.82)'; roundRect(ctx,2,2,252,60,8); ctx.fill();
+  ctx.fillStyle='#e6edf3'; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
+  ctx.fillText(line1,12,line2?20:32);
+  if(line2){ ctx.fillStyle='#8b98a8'; ctx.font='20px ui-monospace,monospace'; ctx.fillText(line2,12,46); }
+  texture.needsUpdate=true;
+}
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+/* ---------- camera presets ---------- */
+function applyCam(mode){
+  camMode=mode;
+  document.querySelectorAll('[data-cam]').forEach(b=>b.classList.toggle('active',b.dataset.cam===mode));
+  if(!bounds) return;
+  const {cx,cy,cz,sx,sy,sz}=bounds;
+  const maxDim=Math.max(sx,sy,sz)*1.4+1;
+  const rect=canvas.getBoundingClientRect(); const aspect=(rect.width||1)/(rect.height||1);
+  let halfH=maxDim/2, halfW=halfH*aspect;
+  // adjust frustum to actual view extents per preset
+  if(mode==='top'){ const w=sx*0.7+1,h=sz*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
+  if(mode==='sideY'){ const w=sx*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
+  if(mode==='sideX'){ const w=sz*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
+  camera.left=-halfW; camera.right=halfW; camera.top=halfH; camera.bottom=-halfH;
+  camera.near=-1000; camera.far=1000; camera.zoom=1;
+  const D=maxDim*3;
+  controls.target.set(cx,cy,cz);
+  if(mode==='top'){ camera.position.set(cx,cy+D,cz); camera.up.set(0,0,-1); controls.enableRotate=false; }
+  else if(mode==='sideY'){ camera.position.set(cx,cy,cz+D); camera.up.set(0,1,0); controls.enableRotate=false; }
+  else if(mode==='sideX'){ camera.position.set(cx+D,cy,cz); camera.up.set(0,1,0); controls.enableRotate=false; }
+  else { camera.position.set(cx+D*0.8,cy+D*0.7,cz+D*0.8); camera.up.set(0,1,0); controls.enableRotate=true; }
+  camera.lookAt(cx,cy,cz); camera.updateProjectionMatrix(); controls.update();
+}
+
+/* ---------- per-frame scene update from sampled result ---------- */
+function updateScene(t){
+  if(!result) return;
+  const fr=frameAt(result.frames,t);
+  let hudLines=[];
+  for(const d of result.ditches){
+    const vol=volumeAt(result.frames,d.id,t);
+    const level=d.footprint? vol/d.footprint : 0; // height above floor
+    const wm=waterMeshes[d.id];
+    if(wm){
+      if(level>1e-4){ wm.mesh.visible=true; wm.mesh.scale.y=level; wm.mesh.position.y=d.floorZ+level/2; }
+      else wm.mesh.visible=false;
+    }
+    const pct=d.capacity? Math.min(100,100*vol/d.spillVolume):0;
+    drawLabel(labelSprites[d.id], d.id, `${vol.toFixed(2)}m³ ${Math.min(100,Math.round(pct))}%`);
+  }
+  // link highlight
+  result.links.forEach((lk,i)=>{
+    const lo=linkObjs.find(o=>o.idx===i); if(!lo)return;
+    const flow=fr.linkFlow[i]||0;
+    const active=flow>1e-9;
+    lo.arrow.setColor(active?0x4aa3ff:0x33414f);
+    lo.arrow.line.material.opacity=active?1:0.5; lo.arrow.line.material.transparent=true;
+  });
+  // hud
+  const totalW=totalAt(result.frames,t);
+  hudLines.push(`t = <b>${fmtTime(t)}</b>`);
+  hudLines.push(`water = ${totalW.toFixed(2)} m³`);
+  hudLines.push(`waste = ${(fr.waste*1000).toFixed(2)} L/s`);
+  hudLines.push('—');
+  for(const p of result.perDitch){
+    const vol=volumeAt(result.frames,p.id,t);
+    hudLines.push(`<b>${p.id}</b> ${vol.toFixed(1)}m³ <span style="color:var(--muted)">${p.status}</span>`);
+  }
+  $('#hud').innerHTML=hudLines.join('<br>');
+}
+
+function setTime(t){
+  curT=t;
+  $('#scrub').value=String(Math.round(t));
+  $('#clock').textContent=fmtTime(t);
+  updateScene(t);
+}
+
+/* ---------- resize + render loop ---------- */
+function resize(){
+  const wrap=$('#canvasWrap'); const w=wrap.clientWidth,h=wrap.clientHeight;
+  renderer.setSize(w,h,false); applyCam(camMode);
+}
+window.addEventListener('resize',resize);
+
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(playing && result){
+    const dt=(ts-lastTS)/1000; lastTS=ts;
+    const speed=+$('#speed').value;
+    let nt=curT+dt*speed;
+    if(nt>=result.totals.horizon){ nt=result.totals.horizon; playing=false; $('#play').textContent='▶ Play'; }
+    setTime(nt);
+  } else lastTS=ts;
+  controls.update();
+  renderer.render(three.scene,camera);
+}
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+document.querySelectorAll('[data-cam]').forEach(b=>b.addEventListener('click',()=>applyCam(b.dataset.cam)));
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{ scene=clone(PRESETS[b.dataset.preset]); curT=0; recompute(); applyCam(camMode); }));
+$('#addDitch').addEventListener('click',()=>{
+  const n=scene.ditches.length; const id=String.fromCharCode(65+n);
+  scene.ditches.push({id,name:'',x:0,y:n*3,length:5,width:2,depth:1,floorZ:0}); recompute();
+});
+$('#addLink').addEventListener('click',()=>{ const ids=scene.ditches.map(d=>d.id); scene.links.push({from:ids[0]||'A',to:'OUT'}); recompute(); });
+$('#addInflow').addEventListener('click',()=>{ const ids=scene.ditches.map(d=>d.id); scene.inflows.push({to:ids[0]||'A',rate:5}); recompute(); });
+$('#applyJson').addEventListener('click',()=>{
+  try{ const o=JSON.parse($('#json').value);
+    if(!o.ditches||!o.links||!o.inflows) throw new Error('JSON needs ditches, links, inflows arrays');
+    scene=o; curT=0; recompute();
+  }catch(e){ showWarn('JSON: '+e.message); }
+});
+$('#copyJson').addEventListener('click',()=>navigator.clipboard?.writeText($('#json').value));
+$('#scrub').addEventListener('input',()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); });
+$('#play').addEventListener('click',()=>{
+  if(!result) return;
+  if(curT>=result.totals.horizon) curT=0;
+  playing=!playing; $('#play').textContent=playing?'⏸ Pause':'▶ Play'; lastTS=performance.now();
+});
+function showWarn(msg){ const e=$('#jsonErr'); e.style.display='block'; e.textContent=msg; }
+
+/* ============================================================
+   IN-PAGE TESTS (worked example etc.)
+   ============================================================ */
+function runTests(){
+  const approx=(a,b,t=1e-6)=>a!=null&&Math.abs(a-b)<t;
+  const cases=[];
+  let r=simulate(PRESETS.worked);
+  const A=r.perDitch.find(p=>p.id==='A'),B=r.perDitch.find(p=>p.id==='B');
+  cases.push(['A spills @2000s',approx(A.tSpill,2000)]);
+  cases.push(['B full @4000s',approx(B.tSpill,4000)&&B.isFull]);
+  cases.push(['fill order A,B',JSON.stringify(r.fillOrder)==='["A","B"]']);
+  cases.push(['all-spill @4000s',approx(r.totals.timeAllSpill,4000)]);
+  // split conservation
+  r=simulate(PRESETS.split);
+  const f=r.frames[r.frames.length-1];
+  cases.push(['split: A passes through',r.perDitch.find(p=>p.id==='A').status==='spilling'||r.perDitch.find(p=>p.id==='A').status==='full']);
+  // dead-end rim-overflow
+  r=simulate({ditches:[{id:'A',x:0,y:0,length:1,width:1,depth:1,floorZ:0}],links:[],inflows:[{to:'A',rate:1}]});
+  cases.push(['dead-end → rim-overflow',r.perDitch[0].status==='rim-overflow'&&approx(r.perDitch[0].tSpill,1000)]);
+  const pass=cases.filter(c=>c[1]).length, all=cases.length;
+  const bar=$('#testbar');
+  bar.className='testbar '+(pass===all?'test-pass':'test-fail');
+  bar.innerHTML=`engine self-test: ${pass}/${all} pass`+(pass===all?' ✓':' ✗ '+cases.filter(c=>!c[1]).map(c=>c[0]).join(', '));
+}
+
+/* boot */
+recompute();
+runTests();
+resize();
+applyCam('iso');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
