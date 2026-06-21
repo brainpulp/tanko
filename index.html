@@ -577,8 +577,20 @@ function recompute(){
   renderEditor();
   $('#json').value=JSON.stringify(scene,null,2);
   setTime(Math.min(curT, result.totals.horizon||0));
+  saveScene();
 }
 function showWarn(m){ const e=$('#jsonErr'); e.style.display='block'; e.textContent=m; }
+
+/* ---------- automatic local persistence ---------- */
+const SAVE_KEY='tanko.scene.v1';
+function saveScene(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(scene)); }catch(e){} }
+function loadSavedScene(){
+  try{ const s=localStorage.getItem(SAVE_KEY); if(!s) return null;
+    const o=JSON.parse(s); if(!o||(!o.chambers&&!o.ditches)) return null;
+    const test=normalizeScene(o); simulate(test);   // validate before trusting it
+    return test;
+  }catch(e){ return null; }
+}
 
 /* ============================================================
    LEFT PANEL
@@ -1196,7 +1208,7 @@ function runTests(){
 }
 
 /* boot */
-scene=normalizeScene(scene);
+scene=loadSavedScene()||normalizeScene(scene);   // restore last edits automatically
 recompute();
 runTests();
 resize();
