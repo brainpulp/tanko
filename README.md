@@ -1,70 +1,77 @@
-# Tanko — 3D Ditch Cascade & Fill-Time Calculator
+# Tanko — 3D Chamber Flow Simulator
 
-Define a set of axis-aligned 3D ditches at different elevations, connect them so
-each spills into the next, and compute the fill behaviour: which fills first, how
-long each takes to reach spill, and the full event timeline. View the same result
-from **Top** (plan), **Side** (elevation), or **3D**.
+Define axis-aligned 3D **chambers** at different elevations, connect them with
+**openings** (holes in shared walls), **tubes** (pipes between any two chambers),
+**inflows** and **drains**, then watch the water move. Build and edit the whole
+scene directly in the 3D view, or as JSON. View from **Top** (plan), **Side**
+(elevation), or **3D**.
 
-This is an **analytical model with a 3D visualisation on top** — not a fluid
-simulation. The numbers come from exact event math; the animation replays them.
+This is a **rate-based hydraulic model** — flow through every connection follows the
+orifice/weir equation, so sizes and valves actually change how fast things fill.
 
 ## Run
 
 Open `index.html` in any modern browser. It's a single file; Three.js loads from a
 CDN via an import map, so an internet connection is needed on first load.
 
-## How it works
+## Editing in the 3D view
 
-- **`simulate(scene) → { events, perDitch, fillOrder, totals, frames, ... }`** is a
-  pure function with no rendering inside it (top of the `<script>` block). The
-  renderer and the timeline scrubber only *sample* its output, so every level(t) is
-  exact and analytic — linear interpolation between event times, no timestep error.
-- Flow is piecewise-constant between events, so the engine advances event-to-event:
-  for each filling ditch it computes time-to-spill, takes the minimum, advances all
-  volumes, re-routes the newly-spilling ditch's inflow downstream in topological
-  order, and repeats.
+A toolbar sits top-left. In **Select** mode, drag the handles:
+
+- **rim** (blue ▲) / **floor** (amber ▼) — raise/lower a chamber's top or bottom (side/3D)
+- **move** (green ◆) / **size** (purple ■) — reposition / resize the footprint (top/3D)
+- **walls** (grey bars) — drag a single border; it **snaps** to neighbouring walls and
+  **won't overlap** another chamber
+- **openings** — drag the bottom & top edges (side) and width (top); drag to slide it
+  along the wall
+- **tubes** — drag either endpoint's height; click the **valve** to open/close
+- **inflows / drains** — drag to reposition; click the valve to open/close
+
+The other toolbar buttons (**+Chamber, +Opening, +Tube, +Inflow, +Drain, Delete**)
+let you add and remove everything by clicking in the scene.
+
+## Hydraulic model
+
+One flow primitive is used everywhere — the orifice/weir discharge
+
+```
+Q = ∫ Cd · w · √(2·g·head) dz   over the wetted aperture     (Cd ≈ 0.6, g = 9.81)
+```
+
+- **Openings** are rectangular apertures `[zBot, zTop]` of a given `width` in a shared
+  wall. Drag the top **above the wall crest** → it behaves as a **cascade/weir** over
+  `zBot`; keep it **below** → a **submerged window**. The regime switches itself.
+- **Automatic spilling:** wherever two chambers' walls touch, water spills over the
+  **lower shared rim** toward the lower side, at a rate proportional to the shared
+  length. No setup — it's derived from geometry.
+- **Loss to the wild:** wall segments with no neighbour overflow at the chamber's own
+  rim and that fluid is **lost** (tracked separately from intentional drains).
+- **Tubes** are round pipes (by `diameter`) between any two chambers, adjacent or not;
+  flow is bidirectional and equalises levels. A low-attached tube acts as communicating
+  vessels.
+- **Drains** are round outlets to outside at an elevation `z`. **Inflows** are sources
+  (L/s). Both have an open/closed **valve**.
+
+The solver integrates volumes over small adaptive steps with flux limiting (no
+overshoot), so mass is conserved: `inflow = stored + drained + lost`.
 
 ### Scene format (the source of truth — editable as JSON)
 
 ```js
 {
-  ditches: [{ id, name, x, y, length, width, depth, floorZ }],
-  links:   [{ from, to, spillZ?, split? }],   // to: ditch id or "OUT" (waste)
-  inflows: [{ to, rate }]                       // rate in L/s
+  chambers: [{ id, name, x, y, length, width, depth, floorZ }],
+  openings: [{ a, b, zBot, zTop, width }],            // a,b adjacent chamber ids
+  tubes:    [{ from, to, fromZ, toZ, diameter, open }],
+  inflows:  [{ to, rate, open }],                      // rate in L/s
+  drains:   [{ from, z, diameter, open }]
 }
 ```
 
-Lengths in **m**, volumes in **m³**, inflow in **L/s** (1 m³ = 1000 L). Times are
-computed in seconds and displayed auto-scaled (s / min / h).
+Lengths in **m**, volumes in **m³**, inflow in **L/s** (1 m³ = 1000 L). Times are in
+seconds, displayed auto-scaled (s / min / h). Legacy scenes using `ditches` /
+`links` / `conduits` are migrated automatically on load.
 
-## Model assumptions (v1)
+## Self-test
 
-1. Geometry is fixed and numeric — open-top rectangular boxes; rim = `floorZ + depth`.
-2. Spill is by **explicit links** at a defined `spillZ` (default = the ditch's rim).
-3. **Forward cascade (DAG)** — water flows source → downstream only. No back-flow or
-   level equalisation. Loops are out of scope.
-4. A spilling ditch is a **pass-through**: at its spill level it holds and passes all
-   further inflow downstream at the incoming rate (links have unlimited carry
-   capacity in v1).
-5. **Rim-overflow / waste:** a ditch with no outgoing outlet fills past its notch to
-   the rim, then routes the excess to waste (`OUT`) and is flagged `rim-overflow`.
-
-## Open decisions — how v1 resolves them
-
-- **Branch split** when one ditch feeds several: **even split by default**, with
-  optional fixed fractions via `split` on each link (normalised). Priority-by-
-  elevation is left for v2.
-- **Equalisation / back-flow:** not modelled — v1 is forward-only (a different,
-  linear-system solver).
-- **Variable inflow over time:** not modelled — constant rate keeps the math exact.
-- **Spill = rim vs. notch:** default **rim**; a lower `spillZ` models a weir/notch
-  (drawn as a purple lip in the side/3D views).
-
-## Worked example (also an in-page self-test)
-
-- **A**: 10×1×1 m, `floorZ` 0 → cap 10 m³, spills at rim 1.0 m, link `A→B`. Inflow 5 L/s into A.
-- **B**: 10×1×1 m, `floorZ` −0.5, link `B→OUT`.
-- Result: A reaches spill at **2000 s** (≈33.3 min); B then fills in another 2000 s,
-  full at **4000 s** (≈66.7 min). Fill order: **A, then B**.
-
-The engine self-test (bottom-left of the UI) checks this and a few edge cases on load.
+The engine self-test (bottom-left of the UI) checks mass conservation across the
+presets, automatic adjacency, valve behaviour, and orifice discharge on load.

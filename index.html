@@ -3,85 +3,93 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Tanko — 3D Ditch Cascade &amp; Fill-Time Calculator</title>
+<title>Tanko — 3D Chamber Flow Simulator</title>
 <style>
   :root{
     --bg:#0e1116; --panel:#161b22; --panel2:#1c2230; --line:#2a3342;
     --ink:#e6edf3; --muted:#8b98a8; --accent:#4aa3ff; --water:#3aa0ff;
-    --good:#3fb950; --warn:#d29922; --bad:#f85149; --spill:#a371f7;
+    --good:#3fb950; --warn:#d29922; --bad:#f85149; --spill:#a371f7; --tube:#e0b341;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px}
-  #app{display:grid;grid-template-columns:330px 1fr 360px;grid-template-rows:100vh;height:100vh}
+  #app{display:grid;grid-template-columns:320px 1fr 340px;grid-template-rows:100vh;height:100vh}
   .col{height:100vh;overflow:auto;border-right:1px solid var(--line)}
   .col:last-child{border-right:none;border-left:1px solid var(--line)}
-  .pad{padding:12px}
+  .pad{padding:12px 12px 40px}
   h1{font-size:15px;margin:0 0 2px}
-  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px;font-weight:600}
-  h2:first-of-type{margin-top:10px}
-  .sub{color:var(--muted);font-size:11px;margin:0 0 6px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:16px 0 6px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+  h2 .add{font-size:11px;text-transform:none;letter-spacing:0}
+  .sub{color:var(--muted);font-size:11px;margin:0 0 8px}
   button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer}
   button:hover{border-color:var(--accent)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
   button.sm{padding:2px 7px;font-size:11px}
   button.active{background:var(--accent);color:#04101f;border-color:var(--accent);font-weight:600}
+  button.tiny{padding:1px 6px;font-size:11px;line-height:1.4}
   table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{padding:3px 5px;text-align:left;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+  th,td{padding:3px 4px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
   input,select{background:#0b0f15;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:3px 5px;font-size:12px;width:100%;font-family:var(--mono)}
   input:focus,select:focus{outline:none;border-color:var(--accent)}
-  td input{width:100%}
   .num{font-family:var(--mono);text-align:right}
-  .grid6{display:grid;grid-template-columns:1.1fr repeat(6,1fr) auto;gap:4px;align-items:center}
-  .row-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  textarea{width:100%;height:280px;background:#0b0f15;color:var(--ink);border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:11.5px;padding:8px;resize:vertical}
-  details{margin-top:6px}
+  .rowcard{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:7px 8px;margin-bottom:6px}
+  .rowcard .top{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+  .rowcard .top b{flex:1}
+  .fields{display:grid;gap:5px 6px}
+  .fields label{display:flex;flex-direction:column;gap:2px;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  textarea{width:100%;height:220px;background:#0b0f15;color:var(--ink);border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:11.5px;padding:8px;resize:vertical}
+  details{margin-top:10px}
   summary{cursor:pointer;color:var(--muted);font-size:12px;padding:4px 0}
-  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600;font-family:var(--mono)}
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;font-family:var(--mono)}
   .s-dry{background:#21262d;color:var(--muted)}
   .s-filling{background:#10324f;color:#7cc4ff}
   .s-spilling{background:#2a1d4a;color:#c4a8ff}
   .s-full{background:#0f3d22;color:#5edc84}
-  .s-rim-overflow{background:#46180f;color:#ff9a8f}
+  .s-overflow{background:#46180f;color:#ff9a8f}
+  .valve{cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:1px 7px;font-size:10.5px;font-family:var(--mono);font-weight:600}
+  .valve.open{background:#0f3d22;color:#7ee2a0;border-color:#1c5e35}
+  .valve.shut{background:#46180f;color:#ff9a8f;border-color:#6e2419}
   #view{position:relative;height:100%;display:flex;flex-direction:column}
   #canvasWrap{flex:1;position:relative;min-height:0}
   canvas{display:block;width:100%;height:100%}
   #cammenu{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:5}
-  #hud{position:absolute;top:10px;right:10px;z-index:5;background:rgba(13,17,23,.78);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.55;min-width:150px}
+  #tools{position:absolute;top:42px;left:10px;display:flex;gap:6px;z-index:5;flex-wrap:wrap;max-width:60%}
+  #tools button{background:rgba(13,17,23,.82)}
+  #hud{position:absolute;top:10px;right:10px;z-index:5;background:rgba(13,17,23,.82);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;min-width:150px}
   #hud b{color:var(--accent)}
-  #handlehint{position:absolute;bottom:10px;left:10px;z-index:5;background:rgba(13,17,23,.78);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:10.5px;color:var(--muted);max-width:340px;line-height:1.5}
+  #handlehint{position:absolute;bottom:10px;left:10px;z-index:5;background:rgba(13,17,23,.82);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:10.5px;color:var(--muted);max-width:54%;line-height:1.5}
   #handlehint b{color:var(--ink)}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:3px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:2px}
   #transport{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:flex;flex-direction:column;gap:7px}
   #scrubrow{display:flex;align-items:center;gap:10px}
-  #scrub{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:linear-gradient(90deg,#1f6feb33,#1f6feb33);outline:none}
+  #scrub{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:#1f6feb33;outline:none}
   #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #04101f}
   #scrub::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #04101f}
-  #track{position:relative;height:14px;margin:0 2px}
-  .tick{position:absolute;top:0;width:2px;height:10px;background:var(--spill);border-radius:1px;transform:translateX(-1px)}
-  .tick.start{background:var(--muted);height:7px}
-  .tick.rim-overflow{background:var(--bad)}
-  .clock{font-family:var(--mono);font-size:14px;min-width:120px}
+  #track{position:relative;height:12px;margin:0 2px}
+  .tick{position:absolute;top:0;width:2px;height:9px;background:var(--spill);border-radius:1px;transform:translateX(-1px)}
+  .tick.start{background:var(--muted);height:6px}
+  .tick.overflow{background:var(--bad)}
+  .clock{font-family:var(--mono);font-size:14px;min-width:96px}
   .clock .lbl{color:var(--muted);font-size:10px}
-  .legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10.5px}
-  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle}
-  .ev{display:grid;grid-template-columns:62px 26px 1fr;gap:6px;padding:3px 0;border-bottom:1px solid var(--line);font-size:11.5px;align-items:baseline}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:10.5px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;vertical-align:middle}
+  .ev{display:grid;grid-template-columns:60px 28px 1fr;gap:6px;padding:3px 0;border-bottom:1px solid var(--line);font-size:11px;align-items:baseline}
   .ev .t{font-family:var(--mono);color:var(--accent)}
   .ev .d{font-family:var(--mono);font-weight:700}
   .ev .x{color:var(--muted)}
   .kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)}
   .kv b{font-family:var(--mono)}
   .warnbox{background:#46180f;border:1px solid #6e2419;color:#ffb3a8;padding:8px;border-radius:6px;font-size:11.5px;margin-top:8px;white-space:pre-wrap}
-  .testbar{font-size:11.5px;font-family:var(--mono);padding:6px 8px;border-radius:6px;margin-top:6px}
+  .testbar{font-size:11.5px;font-family:var(--mono);padding:6px 8px;border-radius:6px;margin-top:10px}
   .test-pass{background:#0f3d22;color:#7ee2a0}
   .test-fail{background:#46180f;color:#ff9a8f}
   .scene-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
   code{font-family:var(--mono);background:#0b0f15;padding:1px 4px;border-radius:4px}
-  .hint{color:var(--muted);font-size:10.5px;margin-top:2px}
-  .spillitem{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line);font-family:var(--mono)}
-  .spillitem .z{color:var(--spill)}
+  .hint{color:var(--muted);font-size:10.5px;margin:4px 0 0}
+  .empty{color:var(--muted);font-size:11px;padding:4px 0}
 </style>
 <script type="importmap">
 { "imports": {
@@ -96,42 +104,37 @@
   <div class="col" id="left">
     <div class="pad">
       <h1>Tanko</h1>
-      <p class="sub">3D ditch cascade &amp; fill-time calculator</p>
+      <p class="sub">3D chamber flow simulator</p>
       <div class="scene-tabs">
-        <button class="sm" data-preset="worked">Worked example</button>
-        <button class="sm" data-preset="cascade">3-step cascade</button>
-        <button class="sm" data-preset="split">Split + waste</button>
-        <button class="sm" data-preset="pools">Pools (drain + spill)</button>
+        <button class="sm" data-preset="worked">Worked</button>
+        <button class="sm" data-preset="cascade">Cascade</button>
+        <button class="sm" data-preset="pools">Pools</button>
+        <button class="sm" data-preset="adjacent">Adjacency</button>
       </div>
 
-      <h2>Ditches</h2>
-      <div id="ditchHead" class="grid6" style="color:var(--muted);font-size:10px;margin-bottom:4px">
-        <div>id / name</div><div class="num">x</div><div class="num">y</div><div class="num">len</div><div class="num">wid</div><div class="num">depth</div><div class="num">floorZ</div><div></div>
-      </div>
-      <div id="ditchRows"></div>
-      <div class="row-actions"><button class="sm" id="addDitch">+ ditch</button></div>
+      <h2>Chambers <button class="add tiny" id="addChamber">+ add</button></h2>
+      <div id="chamberRows"></div>
 
-      <h2>Conduits</h2>
-      <p class="hint" style="margin-top:-2px">Explicit pipes. Each end attaches at <b style="color:var(--accent)">top</b> (rim/overflow) or <b style="color:var(--warn)">bottom</b> (floor/drain). Bottom↔bottom = communicating vessels; flow is bidirectional above the higher attach point.</p>
-      <div id="conduitRows"></div>
-      <div class="row-actions"><button class="sm" id="addConduit">+ conduit</button></div>
+      <h2>Openings <button class="add tiny" id="addOpening">+ add</button></h2>
+      <div id="openingRows"></div>
+      <p class="hint">Holes in a shared wall. Drag bottom/top in side view, width in top view. Top above the wall crest → cascade; below → submerged window.</p>
 
-      <h2>Spilling <span style="text-transform:none;letter-spacing:0;font-weight:400">(auto — by adjacency)</span></h2>
-      <div id="spillRows"></div>
-      <p class="hint">Touching footprints spill over the lower shared rim into the neighbour. Detected from geometry; move ditches together in the top view to create them.</p>
+      <h2>Tubes <button class="add tiny" id="addTube">+ add</button></h2>
+      <div id="tubeRows"></div>
+      <p class="hint">Pipes between any two chambers. Diameter sets flow; click the valve to open/close.</p>
 
-      <h2>Inflows (L/s)</h2>
+      <h2>Inflows <button class="add tiny" id="addInflow">+ add</button></h2>
       <div id="inflowRows"></div>
-      <div class="row-actions"><button class="sm" id="addInflow">+ inflow</button></div>
 
-      <h2>Derived</h2>
-      <table id="derived"><tbody></tbody></table>
+      <h2>Drains <button class="add tiny" id="addDrain">+ add</button></h2>
+      <div id="drainRows"></div>
+      <p class="hint">Outlets to outside. Adjacent walls also spill automatically over the lower rim; exposed walls lose fluid to the wild.</p>
 
       <details id="jsonWrap">
-        <summary>Raw JSON (source of truth — edit &amp; apply)</summary>
+        <summary>Raw JSON (source of truth)</summary>
         <textarea id="json" spellcheck="false"></textarea>
         <div class="row-actions">
-          <button class="sm primary" id="applyJson">Apply JSON</button>
+          <button class="sm primary" id="applyJson">Apply</button>
           <button class="sm" id="copyJson">Copy</button>
         </div>
         <div id="jsonErr" class="warnbox" style="display:none"></div>
@@ -152,6 +155,15 @@
           <button class="sm" data-cam="sideX">Side X</button>
           <button class="sm active" data-cam="iso">3D</button>
         </div>
+        <div id="tools">
+          <button class="sm active" data-tool="select">Select</button>
+          <button class="sm" data-tool="chamber">+Chamber</button>
+          <button class="sm" data-tool="opening">+Opening</button>
+          <button class="sm" data-tool="tube">+Tube</button>
+          <button class="sm" data-tool="inflow">+Inflow</button>
+          <button class="sm" data-tool="drain">+Drain</button>
+          <button class="sm" data-tool="delete">Delete</button>
+        </div>
         <div id="hud"></div>
         <div id="handlehint"></div>
       </div>
@@ -168,8 +180,8 @@
           <span><i style="background:var(--muted)"></i>start</span>
           <span><i style="background:var(--spill)"></i>spill</span>
           <span><i style="background:var(--good)"></i>full</span>
-          <span><i style="background:var(--bad)"></i>rim-overflow / waste</span>
-          <span style="margin-left:auto" id="speedwrap">speed
+          <span><i style="background:var(--bad)"></i>lost / overflow</span>
+          <span style="margin-left:auto">speed
             <select id="speed" style="width:auto;display:inline-block">
               <option value="60">60×</option><option value="300" selected>300×</option>
               <option value="1800">1800×</option><option value="10000">10000×</option>
@@ -183,20 +195,17 @@
   <!-- RIGHT: results -->
   <div class="col" id="right">
     <div class="pad">
-      <h2>System totals</h2>
+      <h2>System</h2>
       <div id="totals"></div>
       <div id="warn"></div>
 
-      <h2>Fill order</h2>
-      <table id="fillOrder"><tbody></tbody></table>
-
-      <h2>Per-ditch results</h2>
-      <table id="perDitch">
-        <thead><tr><th>id</th><th>status</th><th>t&#8203;start</th><th>t&#8203;spill</th><th>t&#8203;full</th></tr></thead>
+      <h2>Chambers</h2>
+      <table id="perChamber">
+        <thead><tr><th>id</th><th>status</th><th class="num">fill</th><th class="num">t&#8203;spill</th><th class="num">t&#8203;full</th></tr></thead>
         <tbody></tbody>
       </table>
 
-      <h2>Event timeline</h2>
+      <h2>Events</h2>
       <div id="events"></div>
     </div>
   </div>
@@ -207,257 +216,264 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /* ============================================================
-   COMPUTE ENGINE — pure function simulate(scene) -> result
-   Time-stepped hydraulic network:
-     • conduits: bidirectional, equalize water surfaces above the
-       higher of their two attach elevations (bottom=floor, top=rim).
-       Bottom↔bottom behaves as communicating vessels; a high attach
-       behaves as an overflow weir.
-     • spills: auto-detected from adjacency; equalize over the lower
-       shared rim (the over-the-edge crest).
-     • OUT conduits drain to waste, pinning the surface at the invert.
-     • a ditch at its rim with no outlet wastes the excess.
-   No rendering inside. Validated against the worked example.
+   COMPUTE ENGINE — simulate(scene) -> result
+   Rate-based hydraulic network. One flow primitive (orifice/weir):
+     Q = ∫ Cd·w·√(2g·head) dz over the wetted aperture.
+   Used for: openings (rect aperture b..t), automatic shared-wall
+   spill (crest=min rim, open top), loss to the wild (own rim, open
+   top), tubes (round, diameter), drains (round, to outside). Sizes
+   throttle flow; valves gate it. Adjacency & exposed perimeter are
+   derived from geometry. Validated headless.
    ============================================================ */
-function simulate(scene, opts = {}) {
-  const L_TO_M3 = 0.001;
-  const EPS = 1e-9;
-  const ZEPS = 1e-6;           // elevation tolerance for crossings
-  const RELAX = opts.relax ?? 60;
-  const maxSteps = opts.maxSteps ?? 40000;
+const G = 9.81, CD = 0.6;
 
-  const ditches = scene.ditches.map(d => {
-    const A = Math.max(d.length * d.width, 1e-9);
-    const rimZ = d.floorZ + d.depth;
-    return { id:d.id, name:d.name, x:d.x, y:d.y, length:d.length, width:d.width,
-             depth:d.depth, floorZ:d.floorZ, A, rimZ, cap:A*d.depth };
-  });
-  const n = ditches.length;
-  const byId = new Map(ditches.map(d => [d.id, d]));
-  const I = new Map(ditches.map((d,i) => [d.id, i]));
-  const attZ = (d, at) => at === 'bottom' ? d.floorZ : d.rimZ;
+function clamp(x, lo, hi){ return x < lo ? lo : x > hi ? hi : x; }
 
-  // ---- conduits (explicit) ----  (accepts legacy `links` with spillZ) ----
-  const rawC = scene.conduits || scene.links || [];
-  const conduits = rawC.map((c, k) => {
-    const from = byId.get(c.from);
-    if (!from) throw new Error(`Conduit ${k}: unknown from-ditch "${c.from}"`);
-    const toOUT = c.to === 'OUT';
-    if (!toOUT && !byId.get(c.to)) throw new Error(`Conduit ${k}: unknown to-ditch "${c.to}"`);
-    const fromAt = c.fromAt || 'top';
-    const toAt = c.toAt || 'bottom';
-    const fromZ = attZ(from, fromAt);
-    const toZ = toOUT ? fromZ : attZ(byId.get(c.to), toAt);
-    let invert = Math.max(fromZ, toZ);
-    if (Number.isFinite(c.invertZ)) invert = c.invertZ;
-    else if (Number.isFinite(c.spillZ)) invert = c.spillZ;   // legacy
-    return { idx:k, from:c.from, to:c.to, toOUT, fromAt, toAt, invert,
-             a:I.get(c.from), b: toOUT ? -1 : I.get(c.to) };
-  });
-
-  // ---- adjacency spills (auto from geometry) ----
-  const tol = opts.adjTol ?? 0.06;
-  const spills = [];
-  for (let i=0;i<n;i++) for (let j=i+1;j<n;j++){
-    const a=ditches[i], b=ditches[j];
-    const ax2=a.x+a.length, ay2=a.y+a.width, bx2=b.x+b.length, by2=b.y+b.width;
-    const gapX = Math.max(0, a.x-bx2, b.x-ax2);
-    const gapY = Math.max(0, a.y-by2, b.y-ay2);
-    if (gapX > tol || gapY > tol) continue;
-    const ovX = Math.min(ax2,bx2) - Math.max(a.x,b.x);
-    const ovY = Math.min(ay2,by2) - Math.max(a.y,b.y);
-    if (ovX <= tol && ovY <= tol) continue;   // mere corner contact — no shared edge
-    spills.push({ a:i, b:j, from:a.id, to:b.id, invert: Math.min(a.rimZ, b.rimZ) });
+// shared wall segment between two axis-aligned chambers, or null
+function sharedSegment(a, b, tol=0.06){
+  const ax1=a.x, ax2=a.x+a.length, ay1=a.y, ay2=a.y+a.width;
+  const bx1=b.x, bx2=b.x+b.length, by1=b.y, by2=b.y+b.width;
+  const yo_lo=Math.max(ay1,by1), yo_hi=Math.min(ay2,by2), yo=yo_hi-yo_lo;
+  if(yo>tol){
+    if(Math.abs(ax2-bx1)<=tol) return {axis:'x', at:(ax2+bx1)/2, lo:yo_lo, hi:yo_hi, len:yo};
+    if(Math.abs(ax1-bx2)<=tol) return {axis:'x', at:(ax1+bx2)/2, lo:yo_lo, hi:yo_hi, len:yo};
   }
-
-  // unified bidirectional connections + one-way OUT drains
-  const conns = [];
-  conduits.forEach(c => { if (!c.toOUT) conns.push({ i:c.a, j:c.b, invert:c.invert, type:'conduit', ref:c.idx }); });
-  spills.forEach((s,si) => conns.push({ i:s.a, j:s.b, invert:s.invert, type:'spill', ref:si }));
-  const outDrains = conduits.filter(c => c.toOUT).map(c => ({ i:c.a, invert:c.invert, ref:c.idx }));
-
-  const hasAnyOut = ditches.map((_,i) =>
-    conns.some(c => c.i===i || c.j===i) || outDrains.some(o => o.i===i));
-
-  // lowest elevation at which a ditch begins passing water onward
-  const passZ = ditches.map((d,i) => {
-    let z = d.rimZ;
-    conns.forEach(c => { if (c.i===i || c.j===i) z = Math.min(z, Math.max(c.invert, d.floorZ)); });
-    outDrains.forEach(o => { if (o.i===i) z = Math.min(z, Math.max(o.invert, d.floorZ)); });
-    return Math.min(Math.max(z, d.floorZ), d.rimZ);
-  });
-
-  // ---- inflows ----
-  const inflow = new Float64Array(n);
-  for (const inf of (scene.inflows || [])) {
-    const k = I.get(inf.to);
-    if (k == null) throw new Error(`Inflow: unknown ditch "${inf.to}"`);
-    inflow[k] += inf.rate * L_TO_M3;
+  const xo_lo=Math.max(ax1,bx1), xo_hi=Math.min(ax2,bx2), xo=xo_hi-xo_lo;
+  if(xo>tol){
+    if(Math.abs(ay2-by1)<=tol) return {axis:'y', at:(ay2+by1)/2, lo:xo_lo, hi:xo_hi, len:xo};
+    if(Math.abs(ay1-by2)<=tol) return {axis:'y', at:(ay1+by2)/2, lo:xo_lo, hi:xo_hi, len:xo};
   }
+  return null;
+}
 
-  // ---- state + integration setup ----
+// Rectangular aperture flow, high->low (>=0). t=Infinity => open-topped weir.
+// zL may be -Infinity (discharge to open air / the wild).
+function apertureFlow(zH, zL, b, t, w){
+  if(w <= 0 || zH <= b) return 0;
+  const aH = Math.min(zH, t);                 // wetted top, high side
+  const aL = clamp(zL, b, t);                 // wetted top, low side
+  let Q = 0;
+  const hs = Math.max(0, aL - b);             // submerged band height
+  if(hs > 0) Q += CD * w * hs * Math.sqrt(2*G*Math.max(0, zH - zL));
+  if(aH > aL){                                // free band: ∫ √(2g(zH-z)) dz
+    const k = CD * w * Math.sqrt(2*G) * (2/3);
+    Q += k * (Math.pow(zH-aL, 1.5) - Math.pow(zH-aH, 1.5));
+  }
+  return Q;
+}
+// Round orifice/pipe flow, high->low (>=0).
+function orificeFlow(zH, zL, invert, area, open){
+  if(!open || area<=0 || zH<=invert) return 0;
+  const head = (zL > invert) ? (zH - zL) : (zH - invert);
+  return CD * area * Math.sqrt(2*G*Math.max(0, head));
+}
+
+function simulate(scene, opts={}){
+  const L_TO_M3 = 0.001, EPS = 1e-12, ZEPS = 1e-5;
+  const chambers = (scene.chambers||[]).map(d=>{
+    const A = Math.max(d.length*d.width, 1e-9), rimZ = d.floorZ + d.depth;
+    return {id:d.id, name:d.name, x:d.x, y:d.y, length:d.length, width:d.width,
+            depth:d.depth, floorZ:d.floorZ, A, rimZ, cap:A*d.depth,
+            perim:2*(d.length+d.width)};
+  });
+  const n = chambers.length;
+  const byId = new Map(chambers.map(d=>[d.id,d]));
+  const I = new Map(chambers.map((d,i)=>[d.id,i]));
+  const need = (id,what)=>{ if(!byId.get(id)) throw new Error(`${what}: unknown chamber "${id}"`); return I.get(id); };
+
+  // ---- static connection list ----
+  const conns = [];   // {kind, i, j, ...}  inter-chamber, bidirectional
+  const sinks = [];   // {kind, i, ...}     to the wild (lost) or drains
+  const sharedLen = new Float64Array(n);
+
+  // automatic adjacency spill (over shared wall crest) + tally shared length
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+    const seg = sharedSegment(chambers[i], chambers[j]);
+    if(!seg) continue;
+    sharedLen[i]+=seg.len; sharedLen[j]+=seg.len;
+    conns.push({kind:'spill', i, j, b:Math.min(chambers[i].rimZ,chambers[j].rimZ), t:Infinity, w:seg.len});
+  }
+  // loss to the wild over exposed perimeter (own rim)
+  for(let i=0;i<n;i++){
+    const ex = Math.max(0, chambers[i].perim - sharedLen[i]);
+    if(ex > 1e-6) sinks.push({kind:'lost', i, b:chambers[i].rimZ, t:Infinity, w:ex});
+  }
+  // manual openings
+  (scene.openings||[]).forEach((o,k)=>{
+    const i=need(o.a,`Opening ${k}`), j=need(o.b,`Opening ${k}`);
+    const seg=sharedSegment(chambers[i],chambers[j]);
+    const lo=Math.max(chambers[i].floorZ,chambers[j].floorZ);
+    const hi=Math.max(chambers[i].rimZ,chambers[j].rimZ);
+    let b=clamp(o.zBot ?? lo, lo, hi), t=clamp(o.zTop ?? hi, lo, hi);
+    if(t<b+0.01) t=b+0.01;
+    conns.push({kind:'opening', i, j, b, t, w:Math.max(0.01,o.width??0.5), ref:k, active:!!seg});
+  });
+  // tubes (any pair)
+  (scene.tubes||[]).forEach((tb,k)=>{
+    const i=need(tb.from,`Tube ${k}`), j=need(tb.to,`Tube ${k}`);
+    const fz=tb.fromZ ?? chambers[i].floorZ, tz=tb.toZ ?? chambers[j].floorZ;
+    const d=tb.diameter??0.3, area=Math.PI*(d/2)**2;
+    conns.push({kind:'tube', i, j, invert:Math.max(fz,tz), area, open:tb.open!==false, ref:k});
+  });
+  // drains (to outside)
+  (scene.drains||[]).forEach((dr,k)=>{
+    const i=need(dr.from,`Drain ${k}`);
+    const d=dr.diameter??0.2, area=Math.PI*(d/2)**2;
+    sinks.push({kind:'drain', i, invert:dr.z ?? chambers[i].floorZ, area, open:dr.open!==false, ref:k});
+  });
+  // inflows
+  const inflows = (scene.inflows||[]).map((f,k)=>({i:need(f.to,`Inflow ${k}`), rate:(f.rate||0)*L_TO_M3, open:f.open!==false, ref:k}));
+
+  // outlet sill per chamber (lowest elevation at which it starts passing water onward)
+  const passZ = chambers.map((d,i)=>{
+    let z=d.rimZ;
+    for(const c of conns){ if(c.i!==i && c.j!==i) continue;
+      if(c.kind==='tube') z=Math.min(z, Math.max(c.invert,d.floorZ));
+      else z=Math.min(z, Math.max(c.b,d.floorZ)); }
+    for(const s of sinks){ if(s.i!==i) continue;
+      if(s.kind==='drain') z=Math.min(z, Math.max(s.invert,d.floorZ)); }
+    return clamp(z, d.floorZ, d.rimZ);
+  });
+  const hasOutlet = chambers.map((d,i)=>
+    conns.some(c=>(c.i===i||c.j===i)) || sinks.some(s=>s.i===i && s.kind==='drain'));
+
+  // ---- integration ----
   const v = new Float64Array(n);
-  const surf = i => ditches[i].floorZ + v[i] / ditches[i].A;
-  const totalIn = inflow.reduce((s,x)=>s+x, 0);
-  const totalCap = ditches.reduce((s,d)=>s+d.cap, 0) || 1;
-  const Tchar = totalIn > EPS ? totalCap / totalIn : 0;
-  const dt = Tchar > 0 ? Math.max(Tchar/1500, 1e-4) : 1;
-  const maxT = (Tchar > 0 ? Tchar : 1) * 5 + 10;
-  const SETTLE = 1e-7 * (totalCap + 1);
+  const surf = i => chambers[i].floorZ + v[i]/chambers[i].A;
+  const totalIn = inflows.reduce((s,f)=>s+(f.open?f.rate:0),0);
+  const totalCap = chambers.reduce((s,d)=>s+d.cap,0) || 1;
+  const Tchar = totalIn>EPS ? totalCap/totalIn : 0;
+  const dt = Tchar>0 ? Math.max(Tchar/2500, 1e-4) : 1;
+  const maxT = (Tchar>0?Tchar:1)*6 + 10;
+  const maxSteps = opts.maxSteps ?? 60000;
+  const SETTLE = 1e-7*(totalCap+1);
 
-  const perD = ditches.map((d,i) => ({
-    id:d.id, name:d.name, A:d.A, footprint:d.A, cap:d.cap, capacity:d.cap,
-    floorZ:d.floorZ, rimZ:d.rimZ, spillZ:passZ[i],
-    length:d.length, width:d.width, depth:d.depth, x:d.x, y:d.y,
-    capacityToSpill: d.A * (passZ[i] - d.floorZ), capacityToRim: d.cap,
-    hasOut: hasAnyOut[i], tStart:null, tSpill:null, tFull:null, status:'dry',
+  const per = chambers.map((d,i)=>({
+    id:d.id, name:d.name, A:d.A, cap:d.cap, floorZ:d.floorZ, rimZ:d.rimZ, depth:d.depth,
+    x:d.x, y:d.y, length:d.length, width:d.width, passZ:passZ[i], hasOutlet:hasOutlet[i],
+    capToSpill:d.A*(passZ[i]-d.floorZ), capToRim:d.cap, tStart:null, tSpill:null, tFull:null, status:'dry',
   }));
 
-  function moveBetween(i, j, invert) {
-    const a = ditches[i], b = ditches[j];
-    const zi = surf(i), zj = surf(j);
-    if (Math.max(zi, zj) <= invert + EPS) return 0;
-    const before = v[i];
-    const zc = (v[i] + v[j] + a.A*a.floorZ + b.A*b.floorZ) / (a.A + b.A);
-    if (zc >= invert) {                       // communicating: settle to common level
-      v[i] = a.A * (zc - a.floorZ);
-      v[j] = b.A * (zc - b.floorZ);
-    } else if (zi > zj) {                      // drain high side down to the sill
-      const drain = a.A * (zi - invert); v[i] -= drain; v[j] += drain;
-    } else {
-      const drain = b.A * (zj - invert); v[j] -= drain; v[i] += drain;
+  const events=[], frames=[];
+  let clock=0;
+
+  function flows(){
+    const cFlow=new Float64Array(conns.length); // signed i->j
+    const out=new Float64Array(n), inc=new Float64Array(n);
+    const apply=[]; // {i,j,vol,sink}
+    // inter-chamber
+    conns.forEach((c,ci)=>{
+      if(c.kind==='opening' && !c.active) return;
+      const zi=surf(c.i), zj=surf(c.j);
+      let hi=c.i, lo=c.j, zH=zi, zL=zj;
+      if(zj>zi){ hi=c.j; lo=c.i; zH=zj; zL=zi; }
+      let Q;
+      if(c.kind==='tube') Q=orificeFlow(zH,zL,c.invert,c.area,c.open);
+      else Q=apertureFlow(zH,zL,c.b,c.t,c.w);
+      if(Q<=0) return;
+      let vol=Q*dt;
+      // don't overshoot equalization
+      const eq=(chambers[hi].A*chambers[lo].A/(chambers[hi].A+chambers[lo].A))*(zH-zL);
+      vol=Math.min(vol, eq);
+      cFlow[ci] = (hi===c.i ? vol : -vol)/dt;
+      apply.push({i:hi, j:lo, vol});
+      out[hi]+=vol; inc[lo]+=vol;
+    });
+    // sinks (to wild / drains)
+    for(const s of sinks){
+      const z=surf(s.i); let Q;
+      if(s.kind==='drain') Q=orificeFlow(z,-Infinity,s.invert,s.area,s.open);
+      else Q=apertureFlow(z,-Infinity,s.b,s.t,s.w);
+      if(Q<=0) continue;
+      let vol=Math.min(Q*dt, chambers[s.i].A*(z-(s.kind==='drain'?s.invert:s.b)));
+      vol=Math.max(0,vol);
+      out[s.i]+=vol;
+      apply.push({i:s.i, j:-1, vol, sink:s.kind});
     }
-    // guard against tiny negative volumes from float error (no rim cap here —
-    // over-rim water must stay mobile so it can reach a lower neighbour/outlet)
-    if (v[i] < 0) { v[j] += v[i]; v[i] = 0; }
-    if (v[j] < 0) { v[i] += v[j]; v[j] = 0; }
-    return v[i] - before;
+    return {cFlow, apply, out, inc};
   }
 
-  function step() {
-    for (let i=0;i<n;i++) v[i] += inflow[i] * dt;
-    const condVol = new Float64Array(conduits.length);
-    const spillVol = new Float64Array(spills.length);
-    let wasteVol = 0;
-    // interleave equalization with OUT draining so a flooded upstream pool can
-    // push water through spills/conduits to a downstream outlet within the step
-    for (let m=0;m<8;m++) {
-      let mv = 0;
-      for (let r=0;r<RELAX;r++) {
-        let rmv = 0;
-        for (const c of conns) {
-          const moved = moveBetween(c.i, c.j, c.invert);
-          if (c.type === 'conduit') condVol[c.ref] += moved; else spillVol[c.ref] += moved;
-          rmv += Math.abs(moved);
-        }
-        if (rmv < EPS) break;
-        mv += rmv;
-      }
-      let wo = 0;
-      for (const o of outDrains) {
-        const d = ditches[o.i], z = surf(o.i);
-        if (z > o.invert + EPS) { const ex = d.A*(z - o.invert); v[o.i] -= ex; wo += ex; condVol[o.ref] += ex; }
-      }
-      wasteVol += wo;
-      if (mv < EPS && wo < EPS && m > 0) break;
-    }
-    // whatever still stands above a rim is a fully-flooded pool — overflow to waste
-    for (let i=0;i<n;i++) {
-      if (v[i] > ditches[i].cap + EPS) { wasteVol += v[i]-ditches[i].cap; v[i]=ditches[i].cap; }
-    }
-    return { condVol, spillVol, wasteVol };
+  function recordFrame(cFlow, lostRate, drainRate){
+    const vol={}, sf={}; let total=0;
+    for(let i=0;i<n;i++){ vol[chambers[i].id]=v[i]; sf[chambers[i].id]=surf(i); total+=v[i]; }
+    frames.push({t:clock, vol, surf:sf, connFlow:Array.from(cFlow), lost:lostRate, drained:drainRate, total});
   }
-
-  const events = [], frames = [];
-  let clock = 0;
-
-  function recordFrame(condVol, spillVol, wasteVol) {
-    const vol = {}, sf = {}; let total = 0;
-    for (let i=0;i<n;i++) { vol[ditches[i].id]=v[i]; sf[ditches[i].id]=surf(i); total+=v[i]; }
-    frames.push({ t:clock, vol, surf:sf,
-      conduitFlow: Array.from(condVol, x => x/dt),
-      spillFlow:   Array.from(spillVol, x => x/dt),
-      waste: wasteVol/dt, total });
-  }
-  function mark() {
-    for (let i=0;i<n;i++) {
-      const z = surf(i), pd = perD[i];
-      if (pd.tStart == null && v[i] > EPS) {
-        pd.tStart = clock;
-        events.push({ t:clock, ditch:pd.id, event:'start', detail:`receives flow` });
-      }
-      if (pd.tSpill == null && v[i] > EPS && z >= passZ[i] - ZEPS) {
-        pd.tSpill = clock;
-        events.push({ t:clock, ditch:pd.id, event: hasAnyOut[i] ? 'spill' : 'full',
-          detail: hasAnyOut[i] ? `passes onward at ${fmt(passZ[i])} m` : `reaches rim ${fmt(pd.rimZ)} m` });
-      }
-      if (pd.tFull == null && v[i] > EPS && z >= pd.rimZ - ZEPS) {
-        pd.tFull = clock;
-        if (!hasAnyOut[i]) events.push({ t:clock, ditch:pd.id, event:'rim-overflow', detail:`no outlet — overflowing to waste` });
-        else if (passZ[i] < pd.rimZ - ZEPS) events.push({ t:clock, ditch:pd.id, event:'full', detail:`backs up to rim ${fmt(pd.rimZ)} m` });
-      }
+  function mark(){
+    for(let i=0;i<n;i++){
+      const z=surf(i), p=per[i];
+      if(p.tStart==null && v[i]>1e-9){ p.tStart=clock; events.push({t:clock,ch:p.id,event:'start',detail:'receives flow'}); }
+      if(p.tSpill==null && v[i]>1e-9 && z>=passZ[i]-ZEPS){ p.tSpill=clock;
+        events.push({t:clock,ch:p.id,event:hasOutlet[i]?'spill':'full',detail:hasOutlet[i]?`passes onward at ${fmt(passZ[i])} m`:`reaches rim ${fmt(p.rimZ)} m`}); }
+      if(p.tFull==null && v[i]>1e-9 && z>=p.rimZ-ZEPS){ p.tFull=clock;
+        if(!hasOutlet[i]) events.push({t:clock,ch:p.id,event:'overflow',detail:'over rim — lost to the wild'}); }
     }
   }
-  function setStatus() {
-    for (let i=0;i<n;i++) {
-      const z = surf(i); let status = 'dry';
-      if (z >= ditches[i].rimZ - ZEPS) status = hasAnyOut[i] ? 'full' : 'rim-overflow';
-      else if (hasAnyOut[i] && z >= passZ[i] - ZEPS) status = 'spilling';
-      else if (v[i] > EPS) status = 'filling';
-      perD[i].status = status;
+  function setStatus(){
+    for(let i=0;i<n;i++){
+      const z=surf(i); let s='dry';
+      if(z>=chambers[i].rimZ-ZEPS) s=hasOutlet[i]?'full':'overflow';
+      else if(hasOutlet[i] && z>=passZ[i]-ZEPS) s='spilling';
+      else if(v[i]>1e-9) s='filling';
+      per[i].status=s;
     }
   }
 
-  // t = 0
-  for (let i=0;i<n;i++) if (inflow[i] > EPS) {
-    perD[i].tStart = 0;
-    events.push({ t:0, ditch:ditches[i].id, event:'start', detail:`inflow begins (${fmtRate(inflow[i])})` });
-  }
-  recordFrame(new Float64Array(conduits.length), new Float64Array(spills.length), 0);
+  for(const f of inflows) if(f.open && f.rate>EPS){ per[f.i].tStart=0; events.push({t:0,ch:chambers[f.i].id,event:'start',detail:`inflow ${(f.rate*1000).toFixed(1)} L/s`}); }
+  recordFrame(new Float64Array(conns.length),0,0);
 
-  let settle = 0, guard = 0;
-  while (guard++ < maxSteps && totalIn > EPS) {
-    const prev = v.slice();
-    const { condVol, spillVol, wasteVol } = step();
-    clock += dt;
+  let settle=0, guard=0;
+  while(guard++<maxSteps && totalIn>EPS){
+    const prev=v.slice();
+    for(const f of inflows) if(f.open) v[f.i]+=f.rate*dt;
+    const F=flows();
+    // scale a chamber's outflow if it would go negative
+    const scale=new Float64Array(n).fill(1);
+    for(let i=0;i<n;i++) if(F.out[i]>v[i]+F.inc[i]+EPS) scale[i]=(v[i]+F.inc[i])/F.out[i];
+    let lost=0, drained=0;
+    for(const a of F.apply){
+      const vol=a.vol*scale[a.i];
+      v[a.i]-=vol;
+      if(a.j>=0) v[a.j]+=vol;
+      else if(a.sink==='drain') drained+=vol;
+      else lost+=vol;
+    }
+    for(let i=0;i<n;i++){ if(v[i]<0) v[i]=0; }
+    clock+=dt;
     mark(); setStatus();
-    recordFrame(condVol, spillVol, wasteVol);
-    let dv = 0; for (let i=0;i<n;i++) dv = Math.max(dv, Math.abs(v[i]-prev[i]));
-    if (dv < SETTLE) { if (++settle > 3) break; } else settle = 0;
-    if (clock > maxT) break;
+    recordFrame(F.cFlow, lost/dt, drained/dt);
+    let dv=0; for(let i=0;i<n;i++) dv=Math.max(dv,Math.abs(v[i]-prev[i]));
+    if(dv<SETTLE){ if(++settle>4) break; } else settle=0;
+    if(clock>maxT) break;
   }
   setStatus();
 
-  const fillOrder = perD.filter(p=>p.tSpill!=null).sort((a,b)=>a.tSpill-b.tSpill).map(p=>p.id);
-  const last = frames[frames.length-1];
-  const reachable = perD.filter(p=>p.tStart!=null);
-  const allSpill = reachable.length && reachable.every(p=>p.tSpill!=null);
-  const totals = {
-    horizon: last ? last.t : 0,
-    timeAllSpill: allSpill ? Math.max(...reachable.map(p=>p.tSpill)) : null,
-    totalWaterFinal: last ? last.total : 0,
-    wasteRateFinal: last ? last.waste : 0,
-    reachableCount: reachable.length, ditchCount: n,
+  const fillOrder=per.filter(p=>p.tSpill!=null).sort((a,b)=>a.tSpill-b.tSpill).map(p=>p.id);
+  const last=frames[frames.length-1];
+  const reachable=per.filter(p=>p.tStart!=null);
+  const allSpill=reachable.length && reachable.every(p=>p.tSpill!=null);
+  const totals={
+    horizon:last?last.t:0,
+    timeAllSpill:allSpill?Math.max(...reachable.map(p=>p.tSpill)):null,
+    waterFinal:last?last.total:0,
+    lostFinal:last?last.lost:0, drainedFinal:last?last.drained:0,
+    inflowTotal:totalIn, reachableCount:reachable.length, chamberCount:n,
   };
-  return { events: events.sort((a,b)=>a.t-b.t), perDitch: perD, fillOrder, totals, frames, conduits, spills, ditches };
+  return {events:events.sort((a,b)=>a.t-b.t), per, fillOrder, totals, frames, conns, sinks, chambers, passZ};
 }
 
-const fmt = n => (Math.abs(n)<1e-9?0:+n.toFixed(3));
-const fmtRate = r => `${(r*1000).toFixed(2)} L/s`;
+const fmt = x => (Math.abs(x)<1e-9?0:+x.toFixed(3));
 
-/* sampling helpers for the renderer (volume continuous) */
-function volumeAt(frames, id, t) {
-  if (!frames.length) return 0;
-  if (t <= frames[0].t) return frames[0].vol[id] ?? 0;
-  if (t >= frames[frames.length-1].t) return frames[frames.length-1].vol[id] ?? 0;
-  for (let i=0;i<frames.length-1;i++){
-    const a=frames[i], b=frames[i+1];
-    if (t>=a.t && t<=b.t){ const f=(b.t-a.t)?(t-a.t)/(b.t-a.t):0; return (a.vol[id]??0)+f*((b.vol[id]??0)-(a.vol[id]??0)); }
-  }
-  return frames[frames.length-1].vol[id] ?? 0;
+/* sampling for the renderer */
+function lerpVal(frames, id, t){
+  if(!frames.length) return 0;
+  if(t<=frames[0].t) return frames[0].vol[id]??0;
+  if(t>=frames[frames.length-1].t) return frames[frames.length-1].vol[id]??0;
+  for(let i=0;i<frames.length-1;i++){ const a=frames[i],b=frames[i+1];
+    if(t>=a.t&&t<=b.t){ const f=(b.t-a.t)?(t-a.t)/(b.t-a.t):0; return (a.vol[id]??0)+f*((b.vol[id]??0)-(a.vol[id]??0)); } }
+  return frames[frames.length-1].vol[id]??0;
 }
-function frameAt(frames, t){ let fr=frames[0]; for (const f of frames){ if (f.t<=t+1e-9) fr=f; else break; } return fr; }
-function totalAt(frames, t){
+function frameAt(frames,t){ let fr=frames[0]; for(const f of frames){ if(f.t<=t+1e-9) fr=f; else break; } return fr; }
+function totalAt(frames,t){
   if(!frames.length) return 0;
   if(t<=frames[0].t) return frames[0].total;
   if(t>=frames[frames.length-1].t) return frames[frames.length-1].total;
@@ -469,204 +485,249 @@ function totalAt(frames, t){
    SCENES
    ============================================================ */
 const PRESETS = {
+  // adjacent trenches: A spills over the lower shared wall into B, which drains.
   worked: {
-    ditches:[
-      {id:'A',name:'North trench',x:0,y:0,length:10,width:1,depth:1,floorZ:0},
-      {id:'B',name:'South trench',x:0,y:3,length:10,width:1,depth:1,floorZ:-0.5},
+    chambers:[
+      {id:'A',name:'North',x:0,y:0,length:10,width:1,depth:1,floorZ:0},
+      {id:'B',name:'South',x:0,y:1,length:10,width:1,depth:1,floorZ:-0.5},
     ],
-    conduits:[{from:'A',to:'B',fromAt:'top',toAt:'bottom'},{from:'B',to:'OUT',fromAt:'top'}],
-    inflows:[{to:'A',rate:5}],
+    openings:[], tubes:[],
+    drains:[{from:'B',z:0.1,diameter:0.4,open:true}],
+    inflows:[{to:'A',rate:5,open:true}],
   },
+  // stepped, touching chambers — each spills over its lower neighbour's rim.
   cascade: {
-    ditches:[
+    chambers:[
       {id:'A',name:'Top',x:0,y:0,length:6,width:2,depth:1,floorZ:2},
-      {id:'B',name:'Mid',x:7,y:0,length:6,width:2,depth:1.2,floorZ:1},
-      {id:'C',name:'Low',x:14,y:0,length:8,width:3,depth:1.5,floorZ:-0.5},
+      {id:'B',name:'Mid',x:6,y:0,length:6,width:2,depth:1,floorZ:1.2},
+      {id:'C',name:'Low',x:12,y:0,length:6,width:2,depth:1,floorZ:0.4},
     ],
-    conduits:[{from:'A',to:'B',fromAt:'top',toAt:'bottom'},{from:'B',to:'C',fromAt:'top',toAt:'bottom'},{from:'C',to:'OUT',fromAt:'top'}],
-    inflows:[{to:'A',rate:12}],
+    openings:[], tubes:[],
+    drains:[{from:'C',z:0.6,diameter:0.5,open:true}],
+    inflows:[{to:'A',rate:12,open:true}],
   },
-  split: {
-    ditches:[
-      {id:'A',name:'Source',x:0,y:4,length:4,width:2,depth:1,floorZ:2},
-      {id:'B',name:'Left',x:6,y:0,length:5,width:2,depth:1,floorZ:0.5},
-      {id:'C',name:'Right',x:6,y:8,length:3,width:2,depth:0.8,floorZ:1},
-    ],
-    conduits:[{from:'A',to:'B',fromAt:'top',toAt:'bottom'},{from:'A',to:'C',fromAt:'top',toAt:'bottom'},{from:'B',to:'OUT',fromAt:'top'}],
-    inflows:[{to:'A',rate:20}],
-  },
-  // Showcases all three mechanisms: P↔Q communicating drain, Q→R adjacency spill, R→OUT.
+  // P↔Q joined low by a tube (communicating vessels); Q→R through a window; R drains.
   pools: {
-    ditches:[
+    chambers:[
       {id:'P',name:'Left pool',x:0,y:0,length:4,width:3,depth:1.5,floorZ:0},
       {id:'Q',name:'Right pool',x:8,y:0,length:4,width:3,depth:1.5,floorZ:0},
-      {id:'R',name:'Spill basin',x:8,y:3,length:4,width:2,depth:1,floorZ:0.5},
+      {id:'R',name:'Spill basin',x:8,y:3,length:4,width:2,depth:1.5,floorZ:0},
     ],
-    conduits:[{from:'P',to:'Q',fromAt:'bottom',toAt:'bottom'},{from:'R',to:'OUT',fromAt:'top'}],
-    inflows:[{to:'P',rate:15}],
+    openings:[{a:'Q',b:'R',width:2,zBot:0.5,zTop:1.1}],
+    tubes:[{from:'P',to:'Q',fromZ:0,toZ:0,diameter:0.5,open:true}],
+    drains:[{from:'R',z:0.6,diameter:0.5,open:true}],
+    inflows:[{to:'P',rate:15,open:true}],
+  },
+  // tall + short touching chambers: a submerged window low down plus auto over-rim spill.
+  adjacent: {
+    chambers:[
+      {id:'A',name:'Tall',x:0,y:0,length:4,width:3,depth:2,floorZ:0},
+      {id:'B',name:'Short',x:4,y:0,length:4,width:3,depth:1,floorZ:0},
+    ],
+    openings:[{a:'A',b:'B',width:1.2,zBot:0.3,zTop:0.9}],
+    tubes:[], drains:[{from:'B',z:0.4,diameter:0.6,open:true}],
+    inflows:[{to:'A',rate:10,open:true}],
   },
 };
 
 /* ============================================================
-   STATE + UI
+   STATE + MIGRATION
    ============================================================ */
 let scene = clone(PRESETS.worked);
 let result = null;
-let curT = 0, playing = false, lastTS = 0;
-let camMode = 'iso';
+let curT=0, playing=false, lastTS=0;
+let camMode='iso', tool='select';
 
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
-function fmtTime(s){
-  if (s==null) return '—';
-  if (s<90) return s.toFixed(s<10?2:1)+' s';
-  if (s<5400) return (s/60).toFixed(1)+' min';
-  return (s/3600).toFixed(2)+' h';
-}
-const $ = sel => document.querySelector(sel);
+const $ = s => document.querySelector(s);
+const num = v => { const n=parseFloat(v); return Number.isFinite(n)?n:0; };
+function fmtTime(s){ if(s==null) return '—'; if(s<90) return s.toFixed(s<10?2:1)+' s'; if(s<5400) return (s/60).toFixed(1)+' min'; return (s/3600).toFixed(2)+' h'; }
 
-// normalise a loaded scene: migrate legacy `links` -> `conduits`
 function normalizeScene(o){
-  if (!o.conduits && o.links) {
-    o.conduits = o.links.map(l => {
-      const c = { from:l.from, to:l.to, fromAt:'top', toAt:'bottom' };
-      if (Number.isFinite(l.spillZ)) c.invertZ = l.spillZ;
-      return c;
-    });
+  o = o || {};
+  if(!o.chambers && o.ditches) o.chambers = o.ditches;
+  o.chambers = o.chambers || [];
+  delete o.ditches;
+  o.openings = o.openings || [];
+  o.tubes = o.tubes || [];
+  o.drains = o.drains || [];
+  o.inflows = (o.inflows||[]).map(f=>({to:f.to, rate:f.rate, open:f.open!==false}));
+  // migrate legacy conduits/links -> tubes (and OUT -> drains)
+  const legacy = o.conduits || o.links;
+  if(legacy){
+    const byId=new Map(o.chambers.map(c=>[c.id,c]));
+    const att=(c,at)=> at==='bottom'?c.floorZ:(c.floorZ+c.depth);
+    for(const lk of legacy){
+      const from=byId.get(lk.from); if(!from) continue;
+      if(lk.to==='OUT'){ o.drains.push({from:lk.from, z:Number.isFinite(lk.spillZ)?lk.spillZ:att(from,lk.fromAt||'top'), diameter:0.3, open:true}); }
+      else { const to=byId.get(lk.to); if(!to) continue;
+        o.tubes.push({from:lk.from, to:lk.to, fromZ:att(from,lk.fromAt||'top'), toZ:att(to,lk.toAt||'bottom'), diameter:0.3, open:true}); }
+    }
   }
-  if (!o.conduits) o.conduits = [];
-  delete o.links;
-  if (!o.inflows) o.inflows = [];
+  delete o.conduits; delete o.links;
   return o;
 }
 
 function recompute(){
-  try { result = simulate(scene); $('#jsonErr').style.display='none'; }
+  try{ result=simulate(scene); $('#jsonErr').style.display='none'; }
   catch(e){ result=null; showWarn(e.message); return; }
-  if (curT > result.totals.horizon) curT = 0;
+  if(curT>result.totals.horizon) curT=0;
   buildMeshes();
   renderResults();
   renderEditor();
-  $('#json').value = JSON.stringify(scene, null, 2);
+  $('#json').value=JSON.stringify(scene,null,2);
   setTime(Math.min(curT, result.totals.horizon||0));
 }
+function showWarn(m){ const e=$('#jsonErr'); e.style.display='block'; e.textContent=m; }
 
-/* ---------- editor rendering ---------- */
+/* ============================================================
+   LEFT PANEL
+   ============================================================ */
+function field(label, value, on, attrs=''){
+  const id='f'+Math.random().toString(36).slice(2,8);
+  setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('change',()=>on(el)); },0);
+  return `<label>${label}<input id="${id}" class="num" value="${value}" ${attrs}></label>`;
+}
+function sel(label, value, opts, on){
+  const id='s'+Math.random().toString(36).slice(2,8);
+  setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('change',()=>on(el)); },0);
+  return `<label>${label}<select id="${id}">${opts.map(o=>`<option ${o===value?'selected':''}>${o}</option>`).join('')}</select></label>`;
+}
 function renderEditor(){
-  const dr = $('#ditchRows'); dr.innerHTML='';
-  scene.ditches.forEach((d,i)=>{
-    const row = document.createElement('div'); row.className='grid6'; row.style.marginBottom='4px';
-    row.innerHTML = `
-      <div><input data-k="id" value="${d.id}" style="font-weight:700"><input data-k="name" value="${d.name??''}" placeholder="name" style="margin-top:2px;font-size:10px"></div>
-      ${['x','y','length','width','depth','floorZ'].map(k=>`<input class="num" data-k="${k}" value="${d.x!==undefined?d[k]:''}">`).join('')}
-      <button class="sm" data-del="${i}">✕</button>`;
-    row.querySelectorAll('input').forEach(inp=>{
-      inp.addEventListener('change',()=>{
-        const k=inp.dataset.k; scene.ditches[i][k] = (k==='id'||k==='name')?inp.value:num(inp.value);
-        recompute();
-      });
-    });
-    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.ditches.splice(i,1); recompute(); });
-    dr.appendChild(row);
+  const ids = scene.chambers.map(c=>c.id);
+
+  const cr=$('#chamberRows'); cr.innerHTML='';
+  scene.chambers.forEach((c,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    card.innerHTML=`<div class="top"><b>${c.id}</b><button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(4,1fr)">
+        ${field('name',c.name??'',el=>{c.name=el.value;recompute();},'style="text-align:left"')}
+        ${field('x',c.x,el=>{c.x=num(el.value);recompute();})}
+        ${field('y',c.y,el=>{c.y=num(el.value);recompute();})}
+        ${field('floorZ',c.floorZ,el=>{c.floorZ=num(el.value);recompute();})}
+        ${field('len',c.length,el=>{c.length=num(el.value);recompute();})}
+        ${field('wid',c.width,el=>{c.width=num(el.value);recompute();})}
+        ${field('depth',c.depth,el=>{c.depth=num(el.value);recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.chambers.splice(i,1); recompute(); };
+    cr.appendChild(card);
+  });
+  if(!ids.length) cr.innerHTML='<div class="empty">no chambers — add one</div>';
+
+  const or=$('#openingRows'); or.innerHTML='';
+  if(!scene.openings.length) or.innerHTML='<div class="empty">none</div>';
+  scene.openings.forEach((o,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    card.innerHTML=`<div class="top"><b>${o.a} ⇄ ${o.b}</b><button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(5,1fr)">
+        ${sel('a',o.a,ids,el=>{o.a=el.value;recompute();})}
+        ${sel('b',o.b,ids,el=>{o.b=el.value;recompute();})}
+        ${field('zBot',o.zBot??0,el=>{o.zBot=num(el.value);recompute();})}
+        ${field('zTop',o.zTop??1,el=>{o.zTop=num(el.value);recompute();})}
+        ${field('width',o.width??0.5,el=>{o.width=num(el.value);recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.openings.splice(i,1); recompute(); };
+    or.appendChild(card);
   });
 
-  const cr = $('#conduitRows'); cr.innerHTML='';
-  const ids = scene.ditches.map(d=>d.id);
-  const atOpts = sel => ['top','bottom'].map(a=>`<option ${a===sel?'selected':''}>${a}</option>`).join('');
-  if(!scene.conduits.length) cr.innerHTML=`<div class="hint">no conduits — add one or place ditches adjacent for auto-spill</div>`;
-  scene.conduits.forEach((c,i)=>{
-    const row=document.createElement('div'); row.style.display='grid';
-    row.style.gridTemplateColumns='1fr 1fr auto 1fr 1fr auto'; row.style.gap='4px'; row.style.alignItems='center'; row.style.marginBottom='4px';
-    row.innerHTML=`
-      <select data-k="from">${ids.map(id=>`<option ${id===c.from?'selected':''}>${id}</option>`).join('')}</select>
-      <select data-k="fromAt" title="attach at source">${atOpts(c.fromAt||'top')}</select>
-      <span style="color:var(--muted)">→</span>
-      <select data-k="to">${[...ids,'OUT'].map(id=>`<option ${id===c.to?'selected':''}>${id}</option>`).join('')}</select>
-      <select data-k="toAt" title="attach at destination" ${c.to==='OUT'?'disabled':''}>${atOpts(c.toAt||'bottom')}</select>
-      <button class="sm" data-del="${i}">✕</button>`;
-    row.querySelectorAll('[data-k]').forEach(inp=>inp.addEventListener('change',()=>{
-      scene.conduits[i][inp.dataset.k]=inp.value; recompute();
-    }));
-    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.conduits.splice(i,1); recompute(); });
-    cr.appendChild(row);
-  });
-
-  // spills (auto, read-only)
-  const sr = $('#spillRows'); sr.innerHTML='';
-  const sp = result ? result.spills : [];
-  if(!sp.length) sr.innerHTML=`<div class="hint">none — no ditches are touching</div>`;
-  sp.forEach(s=>{
-    const el=document.createElement('div'); el.className='spillitem';
-    el.innerHTML=`<span><b>${s.from}</b> ⇄ <b>${s.to}</b></span><span class="z">over ${fmt(s.invert)} m</span>`;
-    sr.appendChild(el);
+  const tr=$('#tubeRows'); tr.innerHTML='';
+  if(!scene.tubes.length) tr.innerHTML='<div class="empty">none</div>';
+  scene.tubes.forEach((t,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    const vid='v'+i;
+    card.innerHTML=`<div class="top"><b>${t.from} → ${t.to}</b>
+        <span class="valve ${t.open!==false?'open':'shut'}" id="${vid}">${t.open!==false?'open':'shut'}</span>
+        <button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(5,1fr)">
+        ${sel('from',t.from,ids,el=>{t.from=el.value;recompute();})}
+        ${sel('to',t.to,ids,el=>{t.to=el.value;recompute();})}
+        ${field('fromZ',t.fromZ??0,el=>{t.fromZ=num(el.value);recompute();})}
+        ${field('toZ',t.toZ??0,el=>{t.toZ=num(el.value);recompute();})}
+        ${field('Ø dia',t.diameter??0.3,el=>{t.diameter=num(el.value);recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.tubes.splice(i,1); recompute(); };
+    card.querySelector('#'+vid).onclick=()=>{ t.open=t.open===false; recompute(); };
+    tr.appendChild(card);
   });
 
   const ir=$('#inflowRows'); ir.innerHTML='';
-  scene.inflows.forEach((inf,i)=>{
-    const row=document.createElement('div'); row.style.display='grid';
-    row.style.gridTemplateColumns='1fr 1fr auto'; row.style.gap='4px'; row.style.alignItems='center'; row.style.marginBottom='4px';
-    row.innerHTML=`
-      <select data-k="to">${ids.map(id=>`<option ${id===inf.to?'selected':''}>${id}</option>`).join('')}</select>
-      <input class="num" data-k="rate" value="${inf.rate}">
-      <button class="sm" data-del="${i}">✕</button>`;
-    row.querySelectorAll('[data-k]').forEach(inp=>inp.addEventListener('change',()=>{
-      const k=inp.dataset.k; scene.inflows[i][k]= k==='to'?inp.value:num(inp.value); recompute();
-    }));
-    row.querySelector('[data-del]').addEventListener('click',()=>{ scene.inflows.splice(i,1); recompute(); });
-    ir.appendChild(row);
+  if(!scene.inflows.length) ir.innerHTML='<div class="empty">none</div>';
+  scene.inflows.forEach((f,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    const vid='if'+i;
+    card.innerHTML=`<div class="top"><b>→ ${f.to}</b>
+        <span class="valve ${f.open!==false?'open':'shut'}" id="${vid}">${f.open!==false?'open':'shut'}</span>
+        <button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(2,1fr)">
+        ${sel('to',f.to,ids,el=>{f.to=el.value;recompute();})}
+        ${field('L/s',f.rate,el=>{f.rate=num(el.value);recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.inflows.splice(i,1); recompute(); };
+    card.querySelector('#'+vid).onclick=()=>{ f.open=f.open===false; recompute(); };
+    ir.appendChild(card);
   });
 
-  // derived
-  const tb=$('#derived').querySelector('tbody'); tb.innerHTML=`<tr style="color:var(--muted)"><th>id</th><th class="num">footprint</th><th class="num">→spill</th><th class="num">→rim</th></tr>`;
-  (result?result.perDitch:[]).forEach(p=>{
-    tb.innerHTML+=`<tr><td><b>${p.id}</b></td><td class="num">${p.footprint.toFixed(2)} m²</td><td class="num">${p.capacityToSpill.toFixed(2)} m³</td><td class="num">${p.capacityToRim.toFixed(2)} m³</td></tr>`;
+  const dr=$('#drainRows'); dr.innerHTML='';
+  if(!scene.drains.length) dr.innerHTML='<div class="empty">none</div>';
+  scene.drains.forEach((d,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    const vid='dv'+i;
+    card.innerHTML=`<div class="top"><b>${d.from} ↧</b>
+        <span class="valve ${d.open!==false?'open':'shut'}" id="${vid}">${d.open!==false?'open':'shut'}</span>
+        <button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(3,1fr)">
+        ${sel('from',d.from,ids,el=>{d.from=el.value;recompute();})}
+        ${field('z',d.z??0,el=>{d.z=num(el.value);recompute();})}
+        ${field('Ø dia',d.diameter??0.2,el=>{d.diameter=num(el.value);recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.drains.splice(i,1); recompute(); };
+    card.querySelector('#'+vid).onclick=()=>{ d.open=d.open===false; recompute(); };
+    dr.appendChild(card);
   });
 }
-const num = v => { const n=parseFloat(v); return Number.isFinite(n)?n:0; };
 
-/* ---------- results rendering ---------- */
+/* ============================================================
+   RIGHT PANEL
+   ============================================================ */
 function renderResults(){
   if(!result) return;
   const t=result.totals;
-  $('#totals').innerHTML = `
-    <div class="kv"><span>Ditches reached / total</span><b>${t.reachableCount} / ${t.ditchCount}</b></div>
-    <div class="kv"><span>All reachable spill by</span><b>${fmtTime(t.timeAllSpill)}</b></div>
-    <div class="kv"><span>Sim horizon</span><b>${fmtTime(t.horizon)}</b></div>
-    <div class="kv"><span>Water in system (final)</span><b>${t.totalWaterFinal.toFixed(2)} m³</b></div>
-    <div class="kv"><span>Waste rate (final)</span><b>${(t.wasteRateFinal*1000).toFixed(2)} L/s</b></div>`;
+  $('#totals').innerHTML=`
+    <div class="kv"><span>Chambers reached</span><b>${t.reachableCount} / ${t.chamberCount}</b></div>
+    <div class="kv"><span>All spill by</span><b>${fmtTime(t.timeAllSpill)}</b></div>
+    <div class="kv"><span>Horizon</span><b>${fmtTime(t.horizon)}</b></div>
+    <div class="kv"><span>Inflow</span><b>${(t.inflowTotal*1000).toFixed(1)} L/s</b></div>
+    <div class="kv"><span>Water stored</span><b>${t.waterFinal.toFixed(2)} m³</b></div>
+    <div class="kv"><span>Drained</span><b>${(t.drainedFinal*1000).toFixed(1)} L/s</b></div>
+    <div class="kv"><span>Lost to wild</span><b>${(t.lostFinal*1000).toFixed(1)} L/s</b></div>`;
 
-  const overflowers = result.perDitch.filter(p=>p.status==='rim-overflow');
-  $('#warn').innerHTML = overflowers.length
-    ? `<div class="warnbox">⚠ Rim-overflow (wasting): ${overflowers.map(p=>p.id).join(', ')} — incoming exceeds outlet capacity; excess routed to waste.</div>` : '';
+  const over=result.per.filter(p=>p.status==='overflow');
+  $('#warn').innerHTML=over.length?`<div class="warnbox">⚠ Losing to the wild: ${over.map(p=>p.id).join(', ')} — over rim with no outlet.</div>`:'';
 
-  const fo=$('#fillOrder').querySelector('tbody'); fo.innerHTML='';
-  if(!result.fillOrder.length) fo.innerHTML=`<tr><td colspan="3" style="color:var(--muted)">no ditch reaches spill</td></tr>`;
-  result.fillOrder.forEach((id,i)=>{
-    const p=result.perDitch.find(x=>x.id===id);
-    fo.innerHTML+=`<tr><td>${i+1}</td><td><b>${id}</b> ${p.name?`<span style="color:var(--muted)">${p.name}</span>`:''}</td><td class="num">${fmtTime(p.tSpill)}</td></tr>`;
-  });
-
-  const pd=$('#perDitch').querySelector('tbody'); pd.innerHTML='';
-  result.perDitch.forEach(p=>{
-    pd.innerHTML+=`<tr><td><b>${p.id}</b></td><td><span class="pill s-${p.status}">${p.status}</span></td><td class="num">${fmtTime(p.tStart)}</td><td class="num">${fmtTime(p.tSpill)}</td><td class="num">${fmtTime(p.tFull)}</td></tr>`;
+  const pc=$('#perChamber').querySelector('tbody'); pc.innerHTML='';
+  result.per.forEach(p=>{
+    const vol=result.frames.length?lerpVal(result.frames,p.id,curT):0;
+    const pct=p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0;
+    pc.innerHTML+=`<tr><td><b>${p.id}</b></td><td><span class="pill s-${p.status}">${p.status}</span></td><td class="num">${pct}%</td><td class="num">${fmtTime(p.tSpill)}</td><td class="num">${fmtTime(p.tFull)}</td></tr>`;
   });
 
   const ev=$('#events'); ev.innerHTML='';
+  if(!result.events.length) ev.innerHTML='<div class="empty">no events</div>';
   result.events.forEach(e=>{
-    ev.innerHTML+=`<div class="ev"><span class="t">${fmtTime(e.t)}</span><span class="d">${e.ditch}</span><span><span class="pill s-${statusForEvent(e.event)}">${e.event}</span> <span class="x">${e.detail}</span></span></div>`;
+    ev.innerHTML+=`<div class="ev"><span class="t">${fmtTime(e.t)}</span><span class="d">${e.ch}</span><span><span class="pill s-${statusForEvent(e.event)}">${e.event}</span> <span class="x">${e.detail}</span></span></div>`;
   });
 
-  // timeline ticks
   const track=$('#track'); track.innerHTML='';
   const H=t.horizon||1;
   result.events.forEach(e=>{
-    const tick=document.createElement('div');
-    tick.className='tick '+(e.event==='start'?'start':e.event==='rim-overflow'?'rim-overflow':'');
-    tick.style.left=(100*e.t/H)+'%'; tick.title=`${fmtTime(e.t)} — ${e.ditch} ${e.event}`;
-    track.appendChild(tick);
+    const tk=document.createElement('div');
+    tk.className='tick '+(e.event==='start'?'start':e.event==='overflow'?'overflow':'');
+    tk.style.left=(100*e.t/H)+'%'; tk.title=`${fmtTime(e.t)} — ${e.ch} ${e.event}`;
+    track.appendChild(tk);
   });
-  $('#scrub').max = String(Math.max(1, Math.round(H)));
+  $('#scrub').max=String(Math.max(1,Math.round(H)));
 }
-function statusForEvent(ev){ return ev==='spill'?'spilling':ev==='start'?'filling':ev==='full'?'full':'rim-overflow'; }
+function statusForEvent(e){ return e==='spill'?'spilling':e==='start'?'filling':e==='full'?'full':'overflow'; }
 
 /* ============================================================
    THREE.JS RENDERER
@@ -676,132 +737,199 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 const three={scene:new THREE.Scene()};
 three.scene.background=new THREE.Color(0x0b0f15);
-three.scene.add(new THREE.AmbientLight(0xffffff,0.75));
-const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(1,2,1.5); three.scene.add(dir);
-const grid=new THREE.GridHelper(60,60,0x223047,0x16202e); grid.material.opacity=0.5; grid.material.transparent=true; three.scene.add(grid);
+three.scene.add(new THREE.AmbientLight(0xffffff,0.8));
+const dl=new THREE.DirectionalLight(0xffffff,0.65); dl.position.set(1,2,1.5); three.scene.add(dl);
+const grid=new THREE.GridHelper(80,80,0x223047,0x161f2c); grid.material.opacity=0.5; grid.material.transparent=true; three.scene.add(grid);
 
 let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
 const controls=new OrbitControls(camera,renderer.domElement);
 controls.enableDamping=true;
 
-let ditchGroup=new THREE.Group(); three.scene.add(ditchGroup);
+let world=new THREE.Group(); three.scene.add(world);
 let handleGroup=new THREE.Group(); three.scene.add(handleGroup);
-let waterMeshes={}, ditchMeshes={}, labelSprites={}, conduitObjs=[], spillObjs=[], handles=[];
-let bounds=null, handleSize=0.2;
+let waterMeshes={}, labelSprites={}, connObjs=[], ioObjs=[], handles=[], pickChambers=[];
+let bounds=null, hsz=0.15;
 
-// world mapping: planX->X, elevation->Y, planY->Z
-const ctr = d => new THREE.Vector3(d.x+d.length/2, 0, d.y+d.width/2);
-const attachPt = (d,at) => new THREE.Vector3(d.x+d.length/2, at==='bottom'?d.floorZ:d.rimZ, d.y+d.width/2);
+const cc = c => new THREE.Vector3(c.x+c.length/2, 0, c.y+c.width/2);
+
+function computeBounds(){
+  let mnX=Infinity,mxX=-Infinity,mnY=Infinity,mxY=-Infinity,mnZ=Infinity,mxZ=-Infinity;
+  const cs=(result?result.chambers:scene.chambers);
+  for(const d of cs){
+    const rimZ=d.rimZ ?? (d.floorZ+d.depth);
+    mnX=Math.min(mnX,d.x); mxX=Math.max(mxX,d.x+d.length);
+    mnZ=Math.min(mnZ,d.y); mxZ=Math.max(mxZ,d.y+d.width);
+    mnY=Math.min(mnY,d.floorZ); mxY=Math.max(mxY,rimZ);
+  }
+  if(!isFinite(mnX)){ mnX=0;mxX=10;mnY=0;mxY=2;mnZ=0;mxZ=10; }
+  bounds={minX:mnX,maxX:mxX,minY:mnY,maxY:mxY,minZ:mnZ,maxZ:mxZ,
+    cx:(mnX+mxX)/2,cy:(mnY+mxY)/2,cz:(mnZ+mxZ)/2,
+    sx:mxX-mnX||1,sy:mxY-mnY||1,sz:mxZ-mnZ||1};
+  hsz=Math.max(0.08, Math.max(bounds.sx,bounds.sy,bounds.sz)*0.013);
+}
 
 function buildMeshes(){
-  conduitObjs.forEach(o=>three.scene.remove(o.arrow));
-  spillObjs.forEach(o=>three.scene.remove(o.line));
-  ditchGroup.clear(); handleGroup.clear();
-  waterMeshes={}; ditchMeshes={}; labelSprites={}; conduitObjs=[]; spillObjs=[]; handles=[];
+  connObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
+  ioObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
+  world.clear(); handleGroup.clear();
+  waterMeshes={}; labelSprites={}; connObjs=[]; ioObjs=[]; handles=[]; pickChambers=[];
   if(!result) return;
+  computeBounds();
+  const byId=new Map(result.chambers.map(d=>[d.id,d]));
 
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  for(const d of result.ditches){
-    minX=Math.min(minX,d.x); maxX=Math.max(maxX,d.x+d.length);
-    minZ=Math.min(minZ,d.y); maxZ=Math.max(maxZ,d.y+d.width);
-    minY=Math.min(minY,d.floorZ); maxY=Math.max(maxY,d.rimZ);
-  }
-  bounds={minX,maxX,minY,maxY,minZ,maxZ,
-    cx:(minX+maxX)/2, cy:(minY+maxY)/2, cz:(minZ+maxZ)/2,
-    sx:maxX-minX||1, sy:maxY-minY||1, sz:maxZ-minZ||1};
-  handleSize=Math.max(0.12, Math.max(bounds.sx,bounds.sy,bounds.sz)*0.02);
-
-  for(const d of result.ditches){
-    const g=new THREE.Group();
-    g.position.set(d.x+d.length/2, 0, d.y+d.width/2);
+  for(const d of result.chambers){
+    const g=new THREE.Group(); g.position.set(d.x+d.length/2,0,d.y+d.width/2);
     const box=new THREE.BoxGeometry(d.length,d.depth,d.width);
-    const edges=new THREE.EdgesGeometry(box);
-    const wall=new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color:0x5b6b80}));
+    const wall=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color:0x5b6b80}));
     wall.position.y=d.floorZ+d.depth/2; g.add(wall);
-    const floor=new THREE.Mesh(new THREE.BoxGeometry(d.length,0.01,d.width),
-      new THREE.MeshBasicMaterial({color:0x1b2433})); floor.position.y=d.floorZ; g.add(floor);
-    const wgeo=new THREE.BoxGeometry(d.length*0.96,1,d.width*0.96);
-    const wmat=new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:0.5});
-    const water=new THREE.Mesh(wgeo,wmat); water.visible=false; g.add(water);
-    waterMeshes[d.id]={mesh:water,d};
-    const spr=makeLabel(d.id); spr.position.set(0,d.rimZ+d.depth*0.35+0.25,0); g.add(spr);
-    labelSprites[d.id]=spr;
-    ditchMeshes[d.id]=g; ditchGroup.add(g);
+    const floor=new THREE.Mesh(new THREE.BoxGeometry(d.length,0.01,d.width),new THREE.MeshBasicMaterial({color:0x1b2433}));
+    floor.position.y=d.floorZ; g.add(floor);
+    // pick proxy (invisible) for tool clicks
+    const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
+    pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
+    const wgeo=new THREE.BoxGeometry(d.length*0.95,1,d.width*0.95);
+    const water=new THREE.Mesh(wgeo,new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:0.45}));
+    water.visible=false; g.add(water); waterMeshes[d.id]={mesh:water,d};
+    const spr=makeLabel(d.id); spr.position.set(0,d.rimZ+hsz*4,0); g.add(spr); labelSprites[d.id]=spr;
+    world.add(g);
 
-    // edit handles
+    // chamber handles
     const cx=d.x+d.length/2, cz=d.y+d.width/2;
-    addHandle('rim',  d.id, cx,           d.rimZ,             cz,           0x4aa3ff);
-    addHandle('floor',d.id, cx,           d.floorZ,           cz,           0xd29922);
-    addHandle('move', d.id, cx,           d.rimZ+handleSize*1.8, cz,        0x3fb950);
-    addHandle('sizeNE',d.id,d.x+d.length, d.rimZ,             d.y+d.width,  0xa371f7);
+    addHandle('rim','cone', d.id, cx, d.rimZ, cz, 0x4aa3ff, 0);
+    addHandle('floor','cone', d.id, cx, d.floorZ, cz, 0xd29922, Math.PI);
+    addHandle('move','oct', d.id, cx, d.rimZ+hsz*2.2, cz, 0x3fb950);
+    addHandle('size','box', d.id, d.x+d.length, d.rimZ, d.y+d.width, 0xa371f7);
+    // wall handles (border drag w/ snap + no overlap)
+    addWall(d, 'x2', d.x+d.length, d.floorZ+d.depth/2, cz);
+    addWall(d, 'x1', d.x,          d.floorZ+d.depth/2, cz);
+    addWall(d, 'y2', cx,           d.floorZ+d.depth/2, d.y+d.width);
+    addWall(d, 'y1', cx,           d.floorZ+d.depth/2, d.y);
   }
 
-  // conduits as arrows along their actual attach points
-  const byIdR=new Map(result.ditches.map(d=>[d.id,d]));
-  result.conduits.forEach((c,i)=>{
-    const from=byIdR.get(c.from);
-    const to=c.toOUT?null:byIdR.get(c.to);
-    const start=attachPt(from,c.fromAt);
-    const end = to ? attachPt(to,c.toAt) : start.clone().add(new THREE.Vector3(0,-Math.max(0.5,from.depth*0.6),from.width*0.9));
-    const d3=new THREE.Vector3().subVectors(end,start); const len=d3.length()||1;
-    const arrow=new THREE.ArrowHelper(d3.clone().normalize(),start,len,0x445063,Math.min(0.6,len*0.25),Math.min(0.35,len*0.15));
-    three.scene.add(arrow); conduitObjs.push({arrow,idx:i});
+  // openings — drawn as a framed rectangle on the shared wall, with handles
+  scene.openings.forEach((o,i)=>{
+    const a=byId.get(o.a), b=byId.get(o.b); if(!a||!b) return;
+    const seg=sharedSegment(a,b); if(!seg) return;
+    const zBot=o.zBot??0, zTop=o.zTop??1, w=o.width??0.5;
+    const center=clamp(((o.pos!=null)?o.pos:(seg.lo+seg.hi)/2), seg.lo+w/2, seg.hi-w/2);
+    const mid=(zBot+zTop)/2;
+    const pos = seg.axis==='x' ? new THREE.Vector3(seg.at,mid,center) : new THREE.Vector3(center,mid,seg.at);
+    const sz = seg.axis==='x' ? [0.04,zTop-zBot,w] : [w,zTop-zBot,0.04];
+    const m=new THREE.Mesh(new THREE.BoxGeometry(...sz),new THREE.MeshBasicMaterial({color:0x7cc4ff,transparent:true,opacity:0.5}));
+    m.position.copy(pos); three.scene.add(m); connObjs.push({obj:m,kind:'opening',ref:i});
+    // handles: bottom, top (vertical), width (horizontal), move
+    addHandleAt('op_bot','bar',{opening:i,axis:seg.axis}, seg.axis==='x'?new THREE.Vector3(seg.at,zBot,center):new THREE.Vector3(center,zBot,seg.at),0xd29922);
+    addHandleAt('op_top','bar',{opening:i,axis:seg.axis}, seg.axis==='x'?new THREE.Vector3(seg.at,zTop,center):new THREE.Vector3(center,zTop,seg.at),0x4aa3ff);
+    const edge = seg.axis==='x'?new THREE.Vector3(seg.at,mid,center+w/2):new THREE.Vector3(center+w/2,mid,seg.at);
+    addHandleAt('op_w','box',{opening:i,axis:seg.axis,seg}, edge,0xa371f7);
+    addHandleAt('op_move','oct',{opening:i,axis:seg.axis,seg}, pos.clone(),0x3fb950);
   });
 
-  // spills as dashed crest lines between adjacent ditches
-  result.spills.forEach((s,i)=>{
-    const a=byIdR.get(s.from), b=byIdR.get(s.to);
-    const pa=new THREE.Vector3(a.x+a.length/2,s.invert,a.y+a.width/2);
-    const pb=new THREE.Vector3(b.x+b.length/2,s.invert,b.y+b.width/2);
-    const geo=new THREE.BufferGeometry().setFromPoints([pa,pb]);
-    const mat=new THREE.LineDashedMaterial({color:0x3a3050,dashSize:0.25,gapSize:0.18,transparent:true,opacity:0.6});
-    const line=new THREE.Line(geo,mat); line.computeLineDistances();
-    three.scene.add(line); spillObjs.push({line,idx:i});
+  // tubes
+  scene.tubes.forEach((t,i)=>{
+    const a=byId.get(t.from), b=byId.get(t.to); if(!a||!b) return;
+    const pa=new THREE.Vector3(a.x+a.length/2,t.fromZ??a.floorZ,a.y+a.width/2);
+    const pb=new THREE.Vector3(b.x+b.length/2,t.toZ??b.floorZ,b.y+b.width/2);
+    const dir=new THREE.Vector3().subVectors(pb,pa), len=dir.length()||1;
+    const tube=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.03,(t.diameter??0.3)/2),Math.max(0.03,(t.diameter??0.3)/2),len,12),
+      new THREE.MeshBasicMaterial({color:0xe0b341,transparent:true,opacity:0.55}));
+    tube.position.copy(pa.clone().add(pb).multiplyScalar(0.5));
+    tube.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
+    three.scene.add(tube); connObjs.push({obj:tube,kind:'tube',ref:i});
+    addHandleAt('tube_a','sphere',{tube:i,end:'a'},pa,0x4aa3ff);
+    addHandleAt('tube_b','sphere',{tube:i,end:'b'},pb,0x4aa3ff);
+    const valve=mkValve(pa.clone().add(pb).multiplyScalar(0.5),t.open!==false,{valveTube:i});
+    three.scene.add(valve.obj); ioObjs.push(valve);
+  });
+
+  // inflows
+  scene.inflows.forEach((f,i)=>{
+    const c=byId.get(f.to); if(!c) return;
+    const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2}; f.at=at;
+    const top=c.rimZ+hsz*3;
+    const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),top,clamp(at.y,c.y,c.y+c.width));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:f.open!==false?0x3aa0ff:0x4a5663}));
+    arr.position.copy(p); arr.rotation.x=Math.PI; arr.userData={kind:'io_move',inflow:i,chamber:f.to}; three.scene.add(arr); handles.push(arr);
+    ioObjs.push({obj:arr});
+    const valve=mkValve(p.clone().add(new THREE.Vector3(0,hsz*2.2,0)),f.open!==false,{valveInflow:i}); three.scene.add(valve.obj); ioObjs.push(valve);
+  });
+
+  // drains
+  scene.drains.forEach((d,i)=>{
+    const c=byId.get(d.from); if(!c) return;
+    const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}; d.at=at;
+    const z=d.z??c.floorZ;
+    const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),z,clamp(at.y,c.y,c.y+c.width));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:d.open!==false?0xf85149:0x4a5663}));
+    arr.position.copy(p); arr.userData={kind:'drain_move',drain:i,chamber:d.from}; three.scene.add(arr); handles.push(arr);
+    ioObjs.push({obj:arr});
+    const valve=mkValve(p.clone().add(new THREE.Vector3(0,-hsz*2.2,0)),d.open!==false,{valveDrain:i}); three.scene.add(valve.obj); ioObjs.push(valve);
   });
 
   updateHandleVis(camMode);
 }
 
-function addHandle(kind,id,x,y,z,color){
-  const m=new THREE.Mesh(new THREE.SphereGeometry(handleSize,16,12),
-    new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.95,depthTest:false}));
-  m.position.set(x,y,z); m.renderOrder=10; m.userData={kind,id};
-  handleGroup.add(m); handles.push(m);
+function mkValve(pos,open,data){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(hsz*1.1,12,10),new THREE.MeshBasicMaterial({color:open?0x3fb950:0xf85149,depthTest:false}));
+  m.position.copy(pos); m.renderOrder=12; m.userData=data; handles.push(m);
+  return {obj:m};
 }
-function updateHandleVis(mode){
-  const showVert = mode==='sideY'||mode==='sideX'||mode==='iso';
-  const showPlan = mode==='top'||mode==='iso';
-  for(const h of handles){
-    const k=h.userData.kind;
-    h.visible = (k==='rim'||k==='floor') ? showVert : showPlan;
-  }
-  const hint = mode==='top'
-    ? `<b>Top view:</b> <span class="dot" style="background:#3fb950"></span>drag to move · <span class="dot" style="background:#a371f7"></span>corner to resize`
-    : (mode==='iso'
-      ? `<b>Drag handles:</b> <span class="dot" style="background:#4aa3ff"></span>rim <span class="dot" style="background:#d29922"></span>floor <span class="dot" style="background:#3fb950"></span>move <span class="dot" style="background:#a371f7"></span>resize`
-      : `<b>Side view:</b> <span class="dot" style="background:#4aa3ff"></span>drag rim · <span class="dot" style="background:#d29922"></span>drag floor`);
-  $('#handlehint').innerHTML=hint;
+function addHandle(kind,shape,id,x,y,z,color,rot){ addHandleAt(kind,shape,{chamber:id},new THREE.Vector3(x,y,z),color,rot); }
+function addHandleAt(kind,shape,data,pos,color,rot){
+  let geo;
+  if(shape==='cone') geo=new THREE.ConeGeometry(hsz*1.1,hsz*2.2,4);
+  else if(shape==='oct') geo=new THREE.OctahedronGeometry(hsz*1.2);
+  else if(shape==='box') geo=new THREE.BoxGeometry(hsz*2,hsz*2,hsz*2);
+  else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.6,hsz*0.7,hsz*0.7);
+  else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color,depthTest:false,transparent:true,opacity:0.96}));
+  m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
+  m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
+  return m;
+}
+function addWall(d,side,x,y,z){
+  const horiz = (side==='x1'||side==='x2');
+  const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x8b98a8,depthTest:false,transparent:true,opacity:0.9}));
+  m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
+  handleGroup.add(m); handles.push(m);
 }
 
 function makeLabel(text){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=64;
-  const ctx=cv.getContext('2d');
   const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
-  spr.scale.set(2.6,0.65,1); spr.userData={cv,ctx,texture:spr.material.map};
+  spr.scale.set(2.4,0.6,1); spr.userData={cv,ctx:cv.getContext('2d'),texture:spr.material.map};
   drawLabel(spr,text,''); return spr;
 }
-function drawLabel(spr,line1,line2){
+function drawLabel(spr,l1,l2){
   const {cv,ctx,texture}=spr.userData;
   ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='rgba(13,17,23,0.82)'; roundRect(ctx,2,2,252,60,8); ctx.fill();
+  ctx.fillStyle='rgba(13,17,23,0.82)'; rr(ctx,2,2,252,60,8); ctx.fill();
   ctx.fillStyle='#e6edf3'; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
-  ctx.fillText(line1,12,line2?20:32);
-  if(line2){ ctx.fillStyle='#8b98a8'; ctx.font='20px ui-monospace,monospace'; ctx.fillText(line2,12,46); }
+  ctx.fillText(l1,12,l2?20:32);
+  if(l2){ ctx.fillStyle='#8b98a8'; ctx.font='19px ui-monospace,monospace'; ctx.fillText(l2,12,46); }
   texture.needsUpdate=true;
 }
-function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 
-/* ---------- camera presets ---------- */
+function updateHandleVis(mode){
+  const vert = mode!=='top';   // rim/floor/walls vertical-ish
+  const plan = mode==='top'||mode==='iso';
+  for(const h of handles){
+    const k=h.userData.kind;
+    if(k==='rim'||k==='floor') h.visible=vert;
+    else if(k==='size'||k==='move') h.visible=plan;
+    else if(k==='wall') h.visible=true;
+    else if(k==='op_bot'||k==='op_top') h.visible=vert;
+    else if(k==='op_w'||k==='op_move') h.visible=plan;
+    else h.visible=true;
+  }
+  $('#handlehint').innerHTML = tool!=='select'
+    ? `<b>${tool}</b> mode — ` + ({chamber:'click ground to place',opening:'click two adjacent chambers',tube:'click two chambers',inflow:'click a chamber',drain:'click a chamber',delete:'click a chamber / tube / opening / inflow / drain'}[tool]||'')
+    : `<b>handles:</b> <span class="dot" style="background:#4aa3ff"></span>rim <span class="dot" style="background:#d29922"></span>floor <span class="dot" style="background:#3fb950"></span>move <span class="dot" style="background:#a371f7"></span>size · grey bars = walls (snap) · click <span class="dot" style="background:#3fb950"></span>/<span class="dot" style="background:#f85149"></span> valves`;
+}
+
+/* ---------- camera ---------- */
 function applyCam(mode){
   camMode=mode;
   document.querySelectorAll('[data-cam]').forEach(b=>b.classList.toggle('active',b.dataset.cam===mode));
@@ -810,14 +938,14 @@ function applyCam(mode){
   const {cx,cy,cz,sx,sy,sz}=bounds;
   const maxDim=Math.max(sx,sy,sz)*1.4+1;
   const rect=canvas.getBoundingClientRect(); const aspect=(rect.width||1)/(rect.height||1);
-  let halfH=maxDim/2, halfW=halfH*aspect;
-  if(mode==='top'){ const w=sx*0.7+1,h=sz*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
-  if(mode==='sideY'){ const w=sx*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
-  if(mode==='sideX'){ const w=sz*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); halfW=halfH*aspect; }
+  let halfH=maxDim/2;
+  if(mode==='top'){ const w=sx*0.7+1,h=sz*0.7+1; halfH=Math.max(h,w/aspect); }
+  if(mode==='sideY'){ const w=sx*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); }
+  if(mode==='sideX'){ const w=sz*0.6+1,h=sy*0.7+1; halfH=Math.max(h,w/aspect); }
+  const halfW=halfH*aspect;
   camera.left=-halfW; camera.right=halfW; camera.top=halfH; camera.bottom=-halfH;
   camera.near=-1000; camera.far=1000; camera.zoom=1;
-  const D=maxDim*3;
-  controls.target.set(cx,cy,cz);
+  const D=maxDim*3; controls.target.set(cx,cy,cz);
   if(mode==='top'){ camera.position.set(cx,cy+D,cz); camera.up.set(0,0,-1); controls.enableRotate=false; }
   else if(mode==='sideY'){ camera.position.set(cx,cy,cz+D); camera.up.set(0,1,0); controls.enableRotate=false; }
   else if(mode==='sideX'){ camera.position.set(cx+D,cy,cz); camera.up.set(0,1,0); controls.enableRotate=false; }
@@ -825,22 +953,33 @@ function applyCam(mode){
   camera.lookAt(cx,cy,cz); camera.updateProjectionMatrix(); controls.update();
 }
 
-/* ---------- interactive drag handles ---------- */
+/* ---------- interaction ---------- */
 const ray=new THREE.Raycaster();
 let drag=null;
-function ndc(e){ const r=canvas.getBoundingClientRect();
-  return new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1); }
+function ndc(e){ const r=canvas.getBoundingClientRect(); return new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1); }
+function groundHit(e){ ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
+  return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0), -(bounds?bounds.minY:0)),p)?p:null; }
+function chamberAt(e){ ray.setFromCamera(ndc(e),camera); const h=ray.intersectObjects(pickChambers,false)[0]; return h?h.object.userData.chamber:null; }
+const snapTol=()=>Math.max(0.08,(bounds?Math.max(bounds.sx,bounds.sz):10)*0.02);
 
 canvas.addEventListener('pointerdown', e=>{
   if(!result) return;
+  // tool actions
+  if(tool!=='select'){ handleTool(e); return; }
   ray.setFromCamera(ndc(e),camera);
   const hit=ray.intersectObjects(handles,false)[0];
-  if(!hit) return;                                 // let OrbitControls handle it
-  const h=hit.object, k=h.userData.kind, id=h.userData.id;
-  const d=scene.ditches.find(x=>x.id===id); if(!d) return;
+  if(!hit) return;
+  const h=hit.object, u=h.userData;
+  // valve clicks
+  if(u.valveTube!=null){ const t=scene.tubes[u.valveTube]; t.open=t.open===false; recompute(); return; }
+  if(u.valveInflow!=null){ const f=scene.inflows[u.valveInflow]; f.open=f.open===false; recompute(); return; }
+  if(u.valveDrain!=null){ const d=scene.drains[u.valveDrain]; d.open=d.open===false; recompute(); return; }
   controls.enabled=false; canvas.setPointerCapture?.(e.pointerId);
   let plane;
-  if(k==='rim'||k==='floor'){
+  const vertical = ['rim','floor','op_bot','op_top','wall','drain_move'].includes(u.kind) ? (u.kind!=='wall'&&u.kind!=='drain_move' ? true : false) : false;
+  // choose plane: vertical drags use a camera-facing vertical plane; planar drags use horizontal plane
+  const vKinds=['rim','floor','op_bot','op_top'];
+  if(vKinds.includes(u.kind)){
     const nrm=new THREE.Vector3().subVectors(camera.position,h.position); nrm.y=0;
     if(nrm.lengthSq()<1e-6) nrm.set(0,0,1); nrm.normalize();
     plane=new THREE.Plane().setFromNormalAndCoplanarPoint(nrm,h.position);
@@ -848,94 +987,152 @@ canvas.addEventListener('pointerdown', e=>{
     plane=new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0,1,0),h.position);
   }
   const p=new THREE.Vector3(); ray.ray.intersectPlane(plane,p);
-  drag={ k, d, plane, grab:p.clone(),
-         orig:{x:d.x,y:d.y,length:d.length,width:d.width,depth:d.depth,floorZ:d.floorZ} };
+  drag={u, plane, grab:p.clone(), start:JSON.parse(JSON.stringify(stateFor(u)))};
   e.preventDefault();
-}, {capture:true});
+},{capture:true});
+
+function stateFor(u){
+  if(u.chamber!=null && (u.kind==='rim'||u.kind==='floor'||u.kind==='move'||u.kind==='size'||u.kind==='wall')) return scene.chambers.find(c=>c.id===u.chamber);
+  if(u.opening!=null) return scene.openings[u.opening];
+  if(u.tube!=null) return scene.tubes[u.tube];
+  if(u.inflow!=null) return scene.inflows[u.inflow];
+  if(u.drain!=null) return scene.drains[u.drain];
+  return {};
+}
 
 canvas.addEventListener('pointermove', e=>{
   if(!drag){
-    if(result){ ray.setFromCamera(ndc(e),camera); canvas.style.cursor=ray.intersectObjects(handles,false).length?'grab':''; }
+    if(result && tool==='select'){ ray.setFromCamera(ndc(e),camera); canvas.style.cursor=ray.intersectObjects(handles,false).length?'grab':''; }
     return;
   }
-  ray.setFromCamera(ndc(e),camera);
-  const p=new THREE.Vector3(); if(!ray.ray.intersectPlane(drag.plane,p)) return;
-  const o=drag.orig, d=drag.d, r3=x=>Math.round(x*1000)/1000;
-  if(drag.k==='rim'){ d.depth=Math.max(0.05, r3(p.y-o.floorZ)); }
-  else if(drag.k==='floor'){ const rim=o.floorZ+o.depth; const nf=Math.min(p.y, rim-0.05); d.floorZ=r3(nf); d.depth=r3(rim-nf); }
-  else if(drag.k==='move'){ d.x=r3(o.x+(p.x-drag.grab.x)); d.y=r3(o.y+(p.z-drag.grab.z)); }
-  else if(drag.k==='sizeNE'){ d.length=Math.max(0.2,r3(p.x-o.x)); d.width=Math.max(0.2,r3(p.z-o.y)); }
+  ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
+  if(!ray.ray.intersectPlane(drag.plane,p)) return;
+  const u=drag.u, s=drag.start, r3=x=>Math.round(x*1000)/1000;
+  if(u.kind==='rim'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.depth=Math.max(0.05,r3(p.y-c.floorZ)); }
+  else if(u.kind==='floor'){ const c=scene.chambers.find(x=>x.id===u.chamber); const rim=s.floorZ+s.depth; const nf=Math.min(p.y,rim-0.05); c.floorZ=r3(nf); c.depth=r3(rim-nf); }
+  else if(u.kind==='move'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.x=r3(s.x+(p.x-drag.grab.x)); c.y=r3(s.y+(p.z-drag.grab.z)); }
+  else if(u.kind==='size'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.length=Math.max(0.3,r3(p.x-c.x)); c.width=Math.max(0.3,r3(p.z-c.y)); }
+  else if(u.kind==='wall'){ dragWall(u,s,p,r3); }
+  else if(u.kind==='op_bot'){ const o=scene.openings[u.opening]; o.zBot=r3(Math.min(p.y,(o.zTop??1)-0.05)); }
+  else if(u.kind==='op_top'){ const o=scene.openings[u.opening]; o.zTop=r3(Math.max(p.y,(o.zBot??0)+0.05)); }
+  else if(u.kind==='op_w'){ const o=scene.openings[u.opening]; const seg=u.seg; const center=(o.pos!=null)?o.pos:(seg.lo+seg.hi)/2; const along=seg.axis==='x'?p.z:p.x; o.width=Math.max(0.05,r3(2*Math.abs(along-center))); }
+  else if(u.kind==='op_move'){ const o=scene.openings[u.opening]; const seg=u.seg; o.pos=r3(seg.axis==='x'?p.z:p.x); }
+  else if(u.kind==='tube_a'){ const t=scene.tubes[u.tube]; t.fromZ=r3(p.y); }
+  else if(u.kind==='tube_b'){ const t=scene.tubes[u.tube]; t.toZ=r3(p.y); }
+  else if(u.kind==='io_move'){ const f=scene.inflows[u.inflow]; const c=scene.chambers.find(x=>x.id===f.to); f.at={x:r3(clamp(p.x,c.x,c.x+c.length)),y:r3(clamp(p.z,c.y,c.y+c.width))}; }
+  else if(u.kind==='drain_move'){ const d=scene.drains[u.drain]; d.z=r3(p.y); }
   scheduleRecompute();
 });
 function endDrag(){ if(!drag) return; drag=null; controls.enabled=true; canvas.style.cursor=''; recompute(); }
 canvas.addEventListener('pointerup',endDrag);
 canvas.addEventListener('pointercancel',endDrag);
 
+function dragWall(u,s,p,r3){
+  const c=scene.chambers.find(x=>x.id===u.chamber);
+  const others=scene.chambers.filter(x=>x!==c);
+  const horiz=(u.side==='x1'||u.side==='x2');
+  // candidate snap coords from other chambers' walls on this axis
+  const snaps=[]; for(const o of others){ if(horiz){ snaps.push(o.x,o.x+o.length); } else { snaps.push(o.y,o.y+o.width); } }
+  let val = horiz?p.x:p.z;
+  for(const sc of snaps) if(Math.abs(sc-val)<snapTol()){ val=sc; break; }
+  val=r3(val);
+  const overlapsPerp=(o)=> horiz ? (Math.min(c.y+c.width,o.y+o.width)-Math.max(c.y,o.y)>0.02)
+                                 : (Math.min(c.x+c.length,o.x+o.length)-Math.max(c.x,o.x)>0.02);
+  if(u.side==='x2'){ let lim=Infinity; for(const o of others) if(overlapsPerp(o)&&o.x>=s.x+s.length-0.06) lim=Math.min(lim,o.x); val=Math.min(val,lim); c.length=Math.max(0.3,r3(val-c.x)); }
+  else if(u.side==='x1'){ let lim=-Infinity; for(const o of others) if(overlapsPerp(o)&&o.x+o.length<=s.x+0.06) lim=Math.max(lim,o.x+o.length); val=Math.max(val,lim); const x2=s.x+s.length; c.x=r3(Math.min(val,x2-0.3)); c.length=r3(x2-c.x); }
+  else if(u.side==='y2'){ let lim=Infinity; for(const o of others) if(overlapsPerp(o)&&o.y>=s.y+s.width-0.06) lim=Math.min(lim,o.y); val=Math.min(val,lim); c.width=Math.max(0.3,r3(val-c.y)); }
+  else if(u.side==='y1'){ let lim=-Infinity; for(const o of others) if(overlapsPerp(o)&&o.y+o.width<=s.y+0.06) lim=Math.max(lim,o.y+o.width); val=Math.max(val,lim); const y2=s.y+s.width; c.y=r3(Math.min(val,y2-0.3)); c.width=r3(y2-c.y); }
+}
+
+let pendingPick=null;
+function handleTool(e){
+  if(tool==='chamber'){ const g=groundHit(e); if(!g) return; const id=nextId(); scene.chambers.push({id,name:'',x:r3(g.x)-2,y:r3(g.z)-1.5,length:4,width:3,depth:1.5,floorZ:0}); setTool('select'); recompute(); return; }
+  const ch=chamberAt(e);
+  if(tool==='inflow'){ if(!ch) return; scene.inflows.push({to:ch,rate:5,open:true}); setTool('select'); recompute(); return; }
+  if(tool==='drain'){ if(!ch) return; const c=scene.chambers.find(x=>x.id===ch); scene.drains.push({from:ch,z:c.floorZ,diameter:0.2,open:true}); setTool('select'); recompute(); return; }
+  if(tool==='tube'||tool==='opening'){
+    if(!ch) return;
+    if(!pendingPick){ pendingPick=ch; $('#handlehint').innerHTML=`<b>${tool}</b>: now click the ${tool==='opening'?'adjacent ':''}second chamber (first = <b>${ch}</b>)`; return; }
+    if(pendingPick===ch){ return; }
+    if(tool==='tube'){ const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
+      scene.tubes.push({from:pendingPick,to:ch,fromZ:a.floorZ,toZ:b.floorZ,diameter:0.3,open:true}); }
+    else { const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
+      if(!sharedSegment(a,b)){ showWarn(`Opening needs a shared wall — ${pendingPick} and ${ch} are not adjacent. Use a tube.`); pendingPick=null; setTool('select'); return; }
+      const lo=Math.max(a.floorZ,b.floorZ); scene.openings.push({a:pendingPick,b:ch,width:0.6,zBot:r3(lo+0.1),zTop:r3(Math.min(a.rimZ,b.rimZ))}); }
+    pendingPick=null; setTool('select'); recompute(); return;
+  }
+  if(tool==='delete'){ deleteAt(e,ch); return; }
+}
+function deleteAt(e,ch){
+  // try connections / inflow / drain first (closest object), else chamber
+  ray.setFromCamera(ndc(e),camera);
+  const objs=connObjs.map(o=>o.obj).concat(handles).filter(Boolean);
+  const hit=ray.intersectObjects(objs,false)[0];
+  if(hit){
+    const co=connObjs.find(o=>o.obj===hit.object);
+    if(co){ if(co.kind==='opening') scene.openings.splice(co.ref,1); else scene.tubes.splice(co.ref,1); setTool('select'); recompute(); return; }
+    const u=hit.object.userData||{};
+    const inf=(u.inflow!=null)?u.inflow:u.valveInflow;
+    const dr=(u.drain!=null)?u.drain:u.valveDrain;
+    if(u.valveTube!=null){ scene.tubes.splice(u.valveTube,1); setTool('select'); recompute(); return; }
+    if(inf!=null){ scene.inflows.splice(inf,1); setTool('select'); recompute(); return; }
+    if(dr!=null){ scene.drains.splice(dr,1); setTool('select'); recompute(); return; }
+  }
+  if(ch){
+    scene.chambers=scene.chambers.filter(c=>c.id!==ch);
+    scene.openings=scene.openings.filter(o=>o.a!==ch&&o.b!==ch);
+    scene.tubes=scene.tubes.filter(t=>t.from!==ch&&t.to!==ch);
+    scene.inflows=scene.inflows.filter(f=>f.to!==ch);
+    scene.drains=scene.drains.filter(d=>d.from!==ch);
+    setTool('select'); recompute();
+  }
+}
+function nextId(){ const used=new Set(scene.chambers.map(c=>c.id)); for(let i=0;i<26;i++){ const id=String.fromCharCode(65+i); if(!used.has(id)) return id; } return 'C'+scene.chambers.length; }
+const r3=x=>Math.round(x*1000)/1000;
+
+function setTool(t){ tool=t; pendingPick=null; document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===t)); updateHandleVis(camMode); controls.enabled=true; }
+
 let rqp=false;
 function scheduleRecompute(){ if(rqp) return; rqp=true; requestAnimationFrame(()=>{ rqp=false; recompute(); }); }
 
-/* ---------- per-frame scene update from sampled result ---------- */
+/* ---------- per-frame ---------- */
 function updateScene(t){
   if(!result) return;
   const fr=frameAt(result.frames,t);
-  let hudLines=[];
-  for(const d of result.ditches){
-    const vol=volumeAt(result.frames,d.id,t);
-    const level=d.A? vol/d.A : 0;
-    const wm=waterMeshes[d.id];
-    if(wm){
-      if(level>1e-4){ wm.mesh.visible=true; wm.mesh.scale.y=level; wm.mesh.position.y=d.floorZ+level/2; }
-      else wm.mesh.visible=false;
-    }
-    const denom=result.perDitch.find(p=>p.id===d.id)?.capacityToSpill || d.cap || 1;
-    const pct=denom? Math.min(100,100*vol/denom):0;
-    drawLabel(labelSprites[d.id], d.id, `${vol.toFixed(2)}m³ ${Math.min(100,Math.round(pct))}%`);
+  const hud=[];
+  for(const d of result.chambers){
+    const vol=lerpVal(result.frames,d.id,t), level=d.A?vol/d.A:0, wm=waterMeshes[d.id];
+    if(wm){ if(level>1e-4){ wm.mesh.visible=true; wm.mesh.scale.y=level; wm.mesh.position.y=d.floorZ+level/2; } else wm.mesh.visible=false; }
+    const p=result.per.find(x=>x.id===d.id), pct=p&&p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0;
+    drawLabel(labelSprites[d.id], d.id, `${vol.toFixed(1)}m³ ${pct}%`);
   }
-  result.conduits.forEach((c,i)=>{
-    const lo=conduitObjs.find(o=>o.idx===i); if(!lo)return;
-    const active=Math.abs(fr.conduitFlow[i]||0)>1e-9;
-    lo.arrow.setColor(active?0x4aa3ff:0x33414f);
-    lo.arrow.line.material.opacity=active?1:0.5; lo.arrow.line.material.transparent=true;
-    if(lo.arrow.cone){ lo.arrow.cone.material.opacity=active?1:0.5; lo.arrow.cone.material.transparent=true; }
+  connObjs.forEach(o=>{
+    const ci = (o.kind==='opening') ? result.conns.findIndex(c=>c.kind==='opening'&&c.ref===o.ref)
+             : result.conns.findIndex(c=>c.kind==='tube'&&c.ref===o.ref);
+    const active = ci>=0 && Math.abs(fr.connFlow[ci]||0)>1e-9;
+    if(o.obj){ o.obj.material.opacity = active?0.85:(o.kind==='tube'?0.4:0.4); o.obj.material.color.set(active?(o.kind==='tube'?0xffd451:0x9ecbff):(o.kind==='tube'?0xe0b341:0x33414f)); }
   });
-  result.spills.forEach((s,i)=>{
-    const lo=spillObjs.find(o=>o.idx===i); if(!lo)return;
-    const active=Math.abs(fr.spillFlow[i]||0)>1e-9;
-    lo.line.material.color.set(active?0xa371f7:0x3a3050);
-    lo.line.material.opacity=active?1:0.45;
-  });
-  const totalW=totalAt(result.frames,t);
-  hudLines.push(`t = <b>${fmtTime(t)}</b>`);
-  hudLines.push(`water = ${totalW.toFixed(2)} m³`);
-  hudLines.push(`waste = ${(fr.waste*1000).toFixed(2)} L/s`);
-  hudLines.push('—');
-  for(const p of result.perDitch){
-    const vol=volumeAt(result.frames,p.id,t);
-    hudLines.push(`<b>${p.id}</b> ${vol.toFixed(1)}m³ <span style="color:var(--muted)">${p.status}</span>`);
-  }
-  $('#hud').innerHTML=hudLines.join('<br>');
+  hud.push(`t = <b>${fmtTime(t)}</b>`);
+  hud.push(`stored ${totalAt(result.frames,t).toFixed(2)} m³`);
+  hud.push(`drained ${(fr.drained*1000).toFixed(1)} · lost ${(fr.lost*1000).toFixed(1)} L/s`);
+  hud.push('—');
+  for(const p of result.per){ const vol=lerpVal(result.frames,p.id,t); hud.push(`<b>${p.id}</b> ${vol.toFixed(1)}m³ <span style="color:var(--muted)">${p.status}</span>`); }
+  $('#hud').innerHTML=hud.join('<br>');
+}
+function setTime(t){ curT=t; $('#scrub').value=String(Math.round(t)); $('#clock').textContent=fmtTime(t); updateScene(t); if(result) renderPerChamberFill(); }
+function renderPerChamberFill(){ /* fill % in right table updates with time */
+  const rows=$('#perChamber').querySelectorAll('tbody tr');
+  result.per.forEach((p,i)=>{ const vol=lerpVal(result.frames,p.id,curT); const pct=p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0; const cell=rows[i]&&rows[i].children[2]; if(cell) cell.textContent=pct+'%'; });
 }
 
-function setTime(t){
-  curT=t;
-  $('#scrub').value=String(Math.round(t));
-  $('#clock').textContent=fmtTime(t);
-  updateScene(t);
-}
-
-/* ---------- resize + render loop ---------- */
-function resize(){
-  const wrap=$('#canvasWrap'); const w=wrap.clientWidth,h=wrap.clientHeight;
-  renderer.setSize(w,h,false); applyCam(camMode);
-}
+/* ---------- resize + loop ---------- */
+function resize(){ const w=$('#canvasWrap').clientWidth,h=$('#canvasWrap').clientHeight; renderer.setSize(w,h,false); applyCam(camMode); }
 window.addEventListener('resize',resize);
-
 function loop(ts){
   requestAnimationFrame(loop);
   if(playing && result){
     const dt=(ts-lastTS)/1000; lastTS=ts;
-    const speed=+$('#speed').value;
-    let nt=curT+dt*speed;
+    let nt=curT+dt*(+$('#speed').value);
     if(nt>=result.totals.horizon){ nt=result.totals.horizon; playing=false; $('#play').textContent='▶ Play'; }
     setTime(nt);
   } else lastTS=ts;
@@ -943,66 +1140,50 @@ function loop(ts){
   renderer.render(three.scene,camera);
 }
 
-/* ============================================================
-   WIRING
-   ============================================================ */
+/* ---------- wiring ---------- */
 document.querySelectorAll('[data-cam]').forEach(b=>b.addEventListener('click',()=>applyCam(b.dataset.cam)));
+document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{ scene=normalizeScene(clone(PRESETS[b.dataset.preset])); curT=0; recompute(); applyCam(camMode); }));
-$('#addDitch').addEventListener('click',()=>{
-  const n=scene.ditches.length; const id=String.fromCharCode(65+n);
-  scene.ditches.push({id,name:'',x:0,y:n*3,length:5,width:2,depth:1,floorZ:0}); recompute();
-});
-$('#addConduit').addEventListener('click',()=>{ const ids=scene.ditches.map(d=>d.id); scene.conduits.push({from:ids[0]||'A',to:'OUT',fromAt:'top',toAt:'bottom'}); recompute(); });
-$('#addInflow').addEventListener('click',()=>{ const ids=scene.ditches.map(d=>d.id); scene.inflows.push({to:ids[0]||'A',rate:5}); recompute(); });
-$('#applyJson').addEventListener('click',()=>{
-  try{ const o=JSON.parse($('#json').value);
-    if(!o.ditches||(!o.conduits&&!o.links)||!o.inflows) throw new Error('JSON needs ditches, conduits (or links), inflows arrays');
-    scene=normalizeScene(o); curT=0; recompute();
-  }catch(e){ showWarn('JSON: '+e.message); }
-});
-$('#copyJson').addEventListener('click',()=>navigator.clipboard?.writeText($('#json').value));
-$('#scrub').addEventListener('input',()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); });
-$('#play').addEventListener('click',()=>{
-  if(!result) return;
-  if(curT>=result.totals.horizon) curT=0;
-  playing=!playing; $('#play').textContent=playing?'⏸ Pause':'▶ Play'; lastTS=performance.now();
-});
-function showWarn(msg){ const e=$('#jsonErr'); e.style.display='block'; e.textContent=msg; }
+$('#addChamber').onclick=()=>{ const id=nextId(); const n=scene.chambers.length; scene.chambers.push({id,name:'',x:0,y:n*4,length:4,width:3,depth:1.5,floorZ:0}); recompute(); };
+$('#addOpening').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.openings.push({a:a.id,b:b.id,width:0.6,zBot:0,zTop:1}); recompute(); };
+$('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} scene.tubes.push({from:scene.chambers[0].id,to:scene.chambers[1].id,fromZ:scene.chambers[0].floorZ,toZ:scene.chambers[1].floorZ,diameter:0.3,open:true}); recompute(); };
+$('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
+$('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
+$('#applyJson').onclick=()=>{ try{ const o=JSON.parse($('#json').value); if(!o.chambers&&!o.ditches) throw new Error('needs a chambers array'); scene=normalizeScene(o); curT=0; recompute(); }catch(e){ showWarn('JSON: '+e.message); } };
+$('#copyJson').onclick=()=>navigator.clipboard?.writeText($('#json').value);
+$('#scrub').oninput=()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); };
+$('#play').onclick=()=>{ if(!result)return; if(curT>=result.totals.horizon) curT=0; playing=!playing; $('#play').textContent=playing?'⏸ Pause':'▶ Play'; lastTS=performance.now(); };
 
 /* ============================================================
    IN-PAGE TESTS
    ============================================================ */
 function runTests(){
-  const approx=(a,b,rel=0.06)=>a!=null&&Math.abs(a-b)<=Math.max(1e-6,Math.abs(b)*rel);
-  const cases=[];
+  const approx=(a,b,rel=0.12)=>a!=null&&Math.abs(a-b)<=Math.max(1e-6,Math.abs(b)*rel);
+  const cs=[];
+  // mass conservation across presets
+  for(const name of ['worked','cascade','pools','adjacent']){
+    const r=simulate(normalizeScene(clone(PRESETS[name])));
+    const fr=r.frames; let win=0,out=0;
+    const Rin=r.totals.inflowTotal;
+    for(let i=1;i<fr.length;i++){ const d=fr[i].t-fr[i-1].t; win+=Rin*d; out+=(fr[i].lost+fr[i].drained)*d; }
+    const stored=fr[fr.length-1].total;
+    cs.push([name+' conserves mass', win<1e-6 || Math.abs((stored+out)-win)/win<0.06]);
+    cs.push([name+' finite horizon', isFinite(r.totals.horizon)&&r.totals.horizon>0]);
+  }
+  // adjacency auto-detected
+  let r=simulate({chambers:[{id:'A',x:0,y:0,length:2,width:2,depth:1,floorZ:0},{id:'B',x:2,y:0,length:2,width:2,depth:1,floorZ:0}],inflows:[{to:'A',rate:3,open:true}]});
+  cs.push(['auto spill present', r.conns.some(c=>c.kind==='spill')]);
+  cs.push(['B receives via spill', r.per.find(p=>p.id==='B').tStart!=null]);
+  // closed drain valve traps water (no drain, dead end -> overflow/lost)
+  r=simulate({chambers:[{id:'A',x:0,y:0,length:2,width:2,depth:1,floorZ:0}],drains:[{from:'A',z:0,diameter:0.3,open:false}],inflows:[{to:'A',rate:2,open:true}]});
+  cs.push(['shut drain → fills then overflows', r.per[0].tFull!=null]);
+  // open drain passes water (steady, less lost)
+  r=simulate({chambers:[{id:'A',x:0,y:0,length:2,width:2,depth:1,floorZ:0}],drains:[{from:'A',z:0.2,diameter:0.5,open:true}],inflows:[{to:'A',rate:1,open:true}]});
+  cs.push(['open drain discharges', r.totals.drainedFinal>1e-6]);
 
-  let r=simulate(normalizeScene(clone(PRESETS.worked)));
-  const A=r.perDitch.find(p=>p.id==='A'), B=r.perDitch.find(p=>p.id==='B');
-  cases.push(['A spills ~2000s',approx(A.tSpill,2000)]);
-  cases.push(['B full ~4000s',approx(B.tFull,4000)]);
-  cases.push(['fill order A,B',JSON.stringify(r.fillOrder)==='["A","B"]']);
-
-  // communicating vessels: equal surface elevations at the end
-  r=simulate(normalizeScene(clone(PRESETS.pools)));
-  const last=r.frames[r.frames.length-1];
-  cases.push(['P,Q equalise (drain)',Math.abs(last.surf['P']-last.surf['Q'])<0.02]);
-  cases.push(['R receives spill',r.perDitch.find(p=>p.id==='R').tStart!=null]);
-  cases.push(['1 auto-spill P-Q-R',r.spills.length===1]);
-
-  // adjacency detection: two touching ditches
-  r=simulate({ditches:[
-    {id:'A',x:0,y:0,length:2,width:2,depth:1,floorZ:0},
-    {id:'B',x:2,y:0,length:2,width:2,depth:1,floorZ:0}],conduits:[],inflows:[{to:'A',rate:3}]});
-  cases.push(['adjacency auto-detected',r.spills.length===1]);
-
-  // dead-end → rim-overflow
-  r=simulate({ditches:[{id:'A',x:0,y:0,length:1,width:1,depth:1,floorZ:0}],conduits:[],inflows:[{to:'A',rate:1}]});
-  cases.push(['dead-end → rim-overflow',r.perDitch[0].status==='rim-overflow'&&approx(r.perDitch[0].tFull,1000)]);
-
-  const pass=cases.filter(c=>c[1]).length, all=cases.length;
-  const bar=$('#testbar');
-  bar.className='testbar '+(pass===all?'test-pass':'test-fail');
-  bar.innerHTML=`engine self-test: ${pass}/${all} pass`+(pass===all?' ✓':' ✗ '+cases.filter(c=>!c[1]).map(c=>c[0]).join(', '));
+  const pass=cs.filter(c=>c[1]).length, all=cs.length;
+  const bar=$('#testbar'); bar.className='testbar '+(pass===all?'test-pass':'test-fail');
+  bar.innerHTML=`engine self-test: ${pass}/${all} pass`+(pass===all?' ✓':' ✗ '+cs.filter(c=>!c[1]).map(c=>c[0]).join(', '));
 }
 
 /* boot */
