@@ -65,6 +65,10 @@
   #tip{position:absolute;z-index:7;display:none;pointer-events:none;background:rgba(13,17,23,.94);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:11px;line-height:1.45;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)}
   #tip .k{font-weight:600}
   #tip .h{color:var(--muted);font-size:10px}
+  #hedit{position:absolute;z-index:8;display:none;align-items:center;gap:6px;background:rgba(13,17,23,.96);border:1px solid #4aa3ff;border-radius:6px;padding:4px 7px;box-shadow:0 2px 12px rgba(0,0,0,.5)}
+  #hedit label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+  #hedit input{width:64px;background:#0d1117;border:1px solid var(--line);border-radius:4px;color:var(--ink);font:600 12px ui-monospace,monospace;padding:2px 5px;text-align:right}
+  #hedit input:focus{outline:none;border-color:#4aa3ff}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:2px}
   #transport{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:flex;flex-direction:column;gap:7px}
   #scrubrow{display:flex;align-items:center;gap:10px}
@@ -153,6 +157,7 @@
       <div id="canvasWrap">
         <canvas id="cv"></canvas>
         <div id="tip"></div>
+        <div id="hedit"><label id="heditLbl"></label><input id="heditInp" type="text" spellcheck="false" autocomplete="off"></div>
         <div id="cammenu">
           <button class="sm" data-cam="top">Top</button>
           <button class="sm" data-cam="sideY">Side Y</button>
@@ -757,7 +762,7 @@ const three={scene:new THREE.Scene()};
 three.scene.background=new THREE.Color(0x0b0f15);
 three.scene.add(new THREE.AmbientLight(0xffffff,0.8));
 const dl=new THREE.DirectionalLight(0xffffff,0.65); dl.position.set(1,2,1.5); three.scene.add(dl);
-const grid=new THREE.GridHelper(80,80,0x1c2738,0x141c28); grid.material.opacity=0.32; grid.material.transparent=true; three.scene.add(grid);
+const grid=new THREE.GridHelper(80,80,0x6b86ad,0x44587a); grid.material.opacity=0.55; grid.material.transparent=true; three.scene.add(grid);
 
 let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
 const controls=new OrbitControls(camera,renderer.domElement);
@@ -907,13 +912,18 @@ function buildMeshes(){
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,-hsz*2.2,0)),d.open!==false,{valveDrain:i}); three.scene.add(valve.obj); ioObjs.push(valve);
   });
 
+  // ground-plane height marker (purely visual; draggable up/down, no sim effect)
+  const gz=scene.groundZ||0; grid.position.y=gz;
+  const gpos=new THREE.Vector3((bounds?bounds.minX:0)-1.2, gz, (bounds?bounds.minZ:0)-1.2);
+  addHandleAt('ground','oct',{},gpos,0x6b86ad);
+
   updateHandleVis(camMode);
 }
 
 function mkValve(pos,open,data){
   // solid disc/puck — reads as a valve wheel and stays distinct from the spherical
   // tube-end handles, while remaining easy to click (no center hole like a torus).
-  const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.25,hsz*1.25,hsz*0.7,16),new THREE.MeshBasicMaterial({color:open?0x3fb950:0xf85149,depthTest:false}));
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.25,hsz*1.25,hsz*0.7,16),new THREE.MeshLambertMaterial({color:open?0x3fb950:0xf85149,emissive:open?0x12401d:0x401214,depthTest:false}));
   m.position.copy(pos); m.renderOrder=12; m.userData=data; handles.push(m);
   return {obj:m};
 }
@@ -925,7 +935,7 @@ function addHandleAt(kind,shape,data,pos,color,rot){
   else if(shape==='box') geo=new THREE.BoxGeometry(hsz*2,hsz*2,hsz*2);
   else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.6,hsz*0.7,hsz*0.7);
   else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
-  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color,depthTest:false,transparent:true,opacity:0.96}));
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
   m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
   m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
   return m;
@@ -933,7 +943,7 @@ function addHandleAt(kind,shape,data,pos,color,rot){
 function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
   const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
-  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x8b98a8,depthTest:false,transparent:true,opacity:0.9}));
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
   m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
   handleGroup.add(m); handles.push(m);
 }
@@ -941,7 +951,7 @@ function addWall(d,side,x,y,z){
 function addBarHandle(kind,data,p0,p1,color){
   const dir=new THREE.Vector3().subVectors(p1,p0); const len=Math.max(dir.length(),0.06);
   const m=new THREE.Mesh(new THREE.BoxGeometry(hsz*0.85,len,hsz*0.85),
-    new THREE.MeshBasicMaterial({color,depthTest:false,transparent:true,opacity:0.95}));
+    new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.95}));
   m.position.copy(p0.clone().add(p1).multiplyScalar(0.5));
   if(len>1e-4) m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   m.renderOrder=11; m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
@@ -1004,6 +1014,19 @@ function polyMidpoint(pts){
   let total=0; const segs=[]; for(let i=0;i<pts.length-1;i++){ const l=pts[i].distanceTo(pts[i+1]); segs.push(l); total+=l; }
   let d=total/2; for(let i=0;i<segs.length;i++){ if(d<=segs[i]) return pts[i].clone().lerp(pts[i+1], segs[i]?d/segs[i]:0); d-=segs[i]; }
   return pts[pts.length-1].clone();
+}
+// red flash over the wall a tube end is snapping to (cleared on mouseup)
+let snapHL=null;
+function clearSnapHL(){ if(snapHL){ three.scene.remove(snapHL); snapHL=null; } }
+function showSnapWall(c,at){
+  clearSnapHL();
+  const onX = Math.abs(at.x-c.x)<1e-6||Math.abs(at.x-(c.x+c.length))<1e-6;
+  const midH=c.floorZ+c.depth/2;
+  let geo,pos,roty=0;
+  if(onX){ const wx=Math.abs(at.x-c.x)<1e-6?c.x:c.x+c.length; geo=new THREE.PlaneGeometry(c.width,c.depth); pos=new THREE.Vector3(wx,midH,c.y+c.width/2); roty=Math.PI/2; }
+  else { const wy=Math.abs(at.y-c.y)<1e-6?c.y:c.y+c.width; geo=new THREE.PlaneGeometry(c.length,c.depth); pos=new THREE.Vector3(c.x+c.length/2,midH,wy); }
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0xff4444,transparent:true,opacity:0.45,side:THREE.DoubleSide,depthTest:false}));
+  m.position.copy(pos); m.rotation.y=roty; m.renderOrder=13; snapHL=m; three.scene.add(m);
 }
 
 
@@ -1072,6 +1095,7 @@ function updateHandleVis(mode){
   const plan = mode==='top'||mode==='iso';
   for(const h of handles){
     const k=h.userData.kind;
+    if(k==='ground'){ h.visible=true; continue; }   // always available, independent of selection
     let base;
     if(k==='rim'||k==='floor') base=vert;
     else if(k==='size'||k==='move') base=plan;
@@ -1115,6 +1139,7 @@ function applyCam(mode){
 /* ---------- interaction ---------- */
 const ray=new THREE.Raycaster();
 let drag=null;
+let editor=null;
 function ndc(e){ const r=canvas.getBoundingClientRect(); return new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1); }
 function groundHit(e){ ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
   return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0), -(bounds?bounds.minY:0)),p)?p:null; }
@@ -1123,6 +1148,7 @@ const snapTol=()=>Math.max(0.08,(bounds?Math.max(bounds.sx,bounds.sz):10)*0.02);
 
 canvas.addEventListener('pointerdown', e=>{
   if(!result) return;
+  hideEditor();
   // tool actions
   if(tool!=='select'){ handleTool(e); return; }
   ray.setFromCamera(ndc(e),camera);
@@ -1144,7 +1170,7 @@ canvas.addEventListener('pointerdown', e=>{
   // choose plane: vertical drags use a camera-facing vertical plane; planar drags use horizontal plane.
   // tube ends edit height in side views, plan attach elsewhere.
   const sideView=(camMode==='sideX'||camMode==='sideY');
-  const vKinds=['rim','floor','op_bot','op_top'];
+  const vKinds=['rim','floor','op_bot','op_top','ground'];
   const useVertical = vKinds.includes(u.kind) || ((u.kind==='tube_a'||u.kind==='tube_b') && sideView);
   if(useVertical){
     const nrm=new THREE.Vector3().subVectors(camera.position,h.position); nrm.y=0;
@@ -1154,7 +1180,8 @@ canvas.addEventListener('pointerdown', e=>{
     plane=new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0,1,0),h.position);
   }
   const p=new THREE.Vector3(); ray.ray.intersectPlane(plane,p);
-  drag={u, plane, grab:p.clone(), start:JSON.parse(JSON.stringify(stateFor(u)))};
+  drag={u, mesh:h, plane, grab:p.clone(), start:JSON.parse(JSON.stringify(stateFor(u)))};
+  editor=buildEditor(u); if(editor) showEditor(e.clientX,e.clientY,false);
   e.preventDefault();
 },{capture:true});
 
@@ -1185,6 +1212,7 @@ function handleInfo(u){
     op_right:{k:'Opening right edge',h:'drag along wall (top / 3D view)',c:0xa371f7},
     tube_a:{k:'Tube end A',h:'drag along wall (top) · height (side); snaps to wall/floor',c:0x4aa3ff},
     tube_b:{k:'Tube end B',h:'drag along wall (top) · height (side); snaps to wall/floor',c:0x4aa3ff},
+    ground:{k:'Ground plane',h:'drag ↕ (visual only — no effect on the sim)',c:0x6b86ad},
     io_move:{k:'Inflow',h:'drag to reposition',c:0x3aa0ff},
     drain_move:{k:'Drain',h:'drag ↕ to set height',c:0xf85149},
   })[u.kind]||null;
@@ -1209,6 +1237,7 @@ canvas.addEventListener('pointermove', e=>{
   ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
   if(!ray.ray.intersectPlane(drag.plane,p)) return;
   const u=drag.u, s=drag.start, r3=x=>Math.round(x*1000)/1000;
+  if(u.kind==='ground'){ scene.groundZ=r3(p.y); grid.position.y=scene.groundZ; if(drag.mesh) drag.mesh.position.y=scene.groundZ; if(editor) showEditor(e.clientX,e.clientY,false); return; }
   if(u.kind==='rim'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.depth=Math.max(0.05,r3(p.y-c.floorZ)); }
   else if(u.kind==='floor'){ const c=scene.chambers.find(x=>x.id===u.chamber); const rim=s.floorZ+s.depth; const nf=Math.min(p.y,rim-0.05); c.floorZ=r3(nf); c.depth=r3(rim-nf); }
   else if(u.kind==='move'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.x=r3(s.x+(p.x-drag.grab.x)); c.y=r3(s.y+(p.z-drag.grab.z)); }
@@ -1230,15 +1259,67 @@ canvas.addEventListener('pointermove', e=>{
       if(camMode==='sideX'||camMode==='sideY'){ let z=p.y; const fl=c.floorZ, rm=c.floorZ+c.depth, tol=snapTol();
         if(Math.abs(z-fl)<tol) z=fl; else if(Math.abs(z-rm)<tol) z=rm;
         if(end) t.fromZ=r3(clamp(z,fl,rm)); else t.toZ=r3(clamp(z,fl,rm)); }
-      else { const sn=snapToWall(c,p.x,p.z); const at={x:r3(sn.x),y:r3(sn.y)}; if(end) t.fromAt=at; else t.toAt=at; } } }
+      else { const sn=snapToWall(c,p.x,p.z); const at={x:r3(sn.x),y:r3(sn.y)}; if(end) t.fromAt=at; else t.toAt=at; showSnapWall(c,at); } } }
   else if(u.kind==='io_move'){ const f=scene.inflows[u.inflow]; const c=scene.chambers.find(x=>x.id===f.to); f.at={x:r3(clamp(p.x,c.x,c.x+c.length)),y:r3(clamp(p.z,c.y,c.y+c.width))}; }
   else if(u.kind==='drain_move'){ const d=scene.drains[u.drain]; d.z=r3(p.y); }
+  if(editor) showEditor(e.clientX,e.clientY,false);
   scheduleRecompute();
 });
-function endDrag(){ if(!drag) return; drag=null; controls.enabled=true; canvas.style.cursor=''; recompute(); }
+function endDrag(){ if(!drag) return; drag=null; controls.enabled=true; canvas.style.cursor=''; clearSnapHL(); recompute(); if(editor) showEditor(null,null,true); }
 canvas.addEventListener('pointerup',endDrag);
 canvas.addEventListener('pointercancel',endDrag);
 canvas.addEventListener('pointerleave',()=>{ $('#tip').style.display='none'; });
+
+/* ---------- inline numeric editor (type-to-set, Enter/Tab commit, Tab→next field) ---------- */
+function fieldsForChamber(c){ return [
+  {label:'x',      get:()=>c.x,      set:v=>c.x=v},
+  {label:'y',      get:()=>c.y,      set:v=>c.y=v},
+  {label:'floor',  get:()=>c.floorZ, set:v=>{ const rim=c.floorZ+c.depth; c.floorZ=v; c.depth=Math.max(0.05,rim-v); }},
+  {label:'length', get:()=>c.length, set:v=>c.length=Math.max(0.3,v)},
+  {label:'width',  get:()=>c.width,  set:v=>c.width=Math.max(0.3,v)},
+  {label:'depth',  get:()=>c.depth,  set:v=>c.depth=Math.max(0.05,v)},
+]; }
+function fieldsForOpening(o){ return [
+  {label:'bottom', get:()=>o.zBot??0,  set:v=>o.zBot=v},
+  {label:'top',    get:()=>o.zTop??1,  set:v=>o.zTop=v},
+  {label:'width',  get:()=>o.width??0.6,set:v=>o.width=Math.max(0.05,v)},
+  {label:'pos',    get:()=>o.pos??0,   set:v=>o.pos=v},
+]; }
+function buildEditor(u){
+  if(u.chamber!=null && ['move','size','rim','floor','wall'].includes(u.kind)){
+    const c=scene.chambers.find(x=>x.id===u.chamber); if(!c) return null;
+    const idx = u.kind==='move'?0 : u.kind==='floor'?2 : u.kind==='rim'?5 : u.kind==='size'?3
+              : (u.side==='x1'||u.side==='x2')?3:4;
+    return {targets:fieldsForChamber(c), idx};
+  }
+  if(u.opening!=null){ const o=scene.openings[u.opening]; if(!o) return null;
+    return {targets:fieldsForOpening(o), idx: u.kind==='op_bot'?0 : u.kind==='op_top'?1 : 2}; }
+  if(u.tube!=null){ const t=scene.tubes[u.tube]; if(!t) return null; const end=(u.end==='a');
+    return {targets:[{label:'height',get:()=>end?t.fromZ:t.toZ,set:v=>{ if(end)t.fromZ=v; else t.toZ=v; }}], idx:0}; }
+  if(u.kind==='ground') return {targets:[{label:'ground',get:()=>scene.groundZ||0,set:v=>scene.groundZ=v}], idx:0};
+  return null;
+}
+function showEditor(clientX,clientY,focus){
+  if(!editor) return;
+  const box=$('#hedit'), inp=$('#heditInp'), t=editor.targets[editor.idx];
+  $('#heditLbl').textContent=t.label;
+  if(document.activeElement!==inp) inp.value=String(Math.round((t.get()??0)*1000)/1000);
+  box.style.display='flex';
+  if(clientX!=null){ const w=$('#canvasWrap').getBoundingClientRect();
+    box.style.left=Math.min(clientX-w.left+16, w.width-130)+'px';
+    box.style.top=Math.max(4, clientY-w.top-12)+'px'; }
+  if(focus){ inp.value=String(Math.round((t.get()??0)*1000)/1000); inp.focus(); inp.select(); }
+}
+function hideEditor(){ $('#hedit').style.display='none'; editor=null; }
+function commitEditor(){ if(!editor) return; const v=parseFloat($('#heditInp').value);
+  if(Number.isFinite(v)){ editor.targets[editor.idx].set(v); recompute(); } }
+$('#heditInp').addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); commitEditor(); hideEditor(); }
+  else if(e.key==='Tab'){ e.preventDefault(); commitEditor();
+    if(editor){ editor.idx=(editor.idx+(e.shiftKey?-1:1)+editor.targets.length)%editor.targets.length; showEditor(null,null,true); } }
+  else if(e.key==='Escape'){ e.preventDefault(); hideEditor(); }
+});
+$('#heditInp').addEventListener('blur', ()=>{ /* keep open; click-away on canvas hides it */ });
 
 function dragWall(u,s,p,r3){
   const c=scene.chambers.find(x=>x.id===u.chamber);
@@ -1271,7 +1352,8 @@ function handleTool(e){
       scene.tubes.push({from:pendingPick,to:ch,fromZ:a.floorZ,toZ:b.floorZ,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),diameter:0.3,open:true}); }
     else { const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
       if(!sharedSegment(a,b)){ showWarn(`Opening needs a shared wall — ${pendingPick} and ${ch} are not adjacent. Use a tube.`); pendingPick=null; setTool('select'); return; }
-      const lo=Math.max(a.floorZ,b.floorZ); const hi=Math.min(a.floorZ+a.depth,b.floorZ+b.depth); scene.openings.push({a:pendingPick,b:ch,width:0.6,zBot:r3(lo+0.1),zTop:r3(hi)}); }
+      const lo=Math.max(a.floorZ,b.floorZ), hi=Math.min(a.floorZ+a.depth,b.floorZ+b.depth), span=Math.max(hi-lo,0.1);
+      scene.openings.push({a:pendingPick,b:ch,width:0.8,zBot:r3(lo+span*0.15),zTop:r3(lo+span*0.6)}); selected=pendingPick; }
     pendingPick=null; setTool('select'); recompute(); return;
   }
   if(tool==='delete'){ deleteAt(e,ch); return; }
