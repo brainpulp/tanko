@@ -911,6 +911,14 @@ function drawLabel(spr,l1,l2){
   texture.needsUpdate=true;
 }
 function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+// keep chamber labels a constant on-screen size regardless of ortho zoom/fit,
+// so they stay readable and don't overlap in tightly-fitted side views.
+function updateLabelScale(){
+  const hpx=canvas.clientHeight||1;
+  const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
+  const H=42*worldPerPx;            // ~42px-tall label box (canvas is 256x64 → 4:1)
+  for(const id in labelSprites){ const s=labelSprites[id]; if(s) s.scale.set(H*4,H,1); }
+}
 
 function updateHandleVis(mode){
   const vert = mode!=='top';   // rim/floor/walls vertical-ish
@@ -1058,7 +1066,7 @@ function handleTool(e){
       scene.tubes.push({from:pendingPick,to:ch,fromZ:a.floorZ,toZ:b.floorZ,diameter:0.3,open:true}); }
     else { const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
       if(!sharedSegment(a,b)){ showWarn(`Opening needs a shared wall — ${pendingPick} and ${ch} are not adjacent. Use a tube.`); pendingPick=null; setTool('select'); return; }
-      const lo=Math.max(a.floorZ,b.floorZ); scene.openings.push({a:pendingPick,b:ch,width:0.6,zBot:r3(lo+0.1),zTop:r3(Math.min(a.rimZ,b.rimZ))}); }
+      const lo=Math.max(a.floorZ,b.floorZ); const hi=Math.min(a.floorZ+a.depth,b.floorZ+b.depth); scene.openings.push({a:pendingPick,b:ch,width:0.6,zBot:r3(lo+0.1),zTop:r3(hi)}); }
     pendingPick=null; setTool('select'); recompute(); return;
   }
   if(tool==='delete'){ deleteAt(e,ch); return; }
@@ -1137,6 +1145,7 @@ function loop(ts){
     setTime(nt);
   } else lastTS=ts;
   controls.update();
+  updateLabelScale();
   renderer.render(three.scene,camera);
 }
 
