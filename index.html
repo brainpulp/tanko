@@ -886,6 +886,8 @@ controls.enableDamping=true;
 
 let world=new THREE.Group(); three.scene.add(world);
 let handleGroup=new THREE.Group(); three.scene.add(handleGroup);
+let flowGroup=new THREE.Group(); three.scene.add(flowGroup);   // animated flow tracers
+let tracers=[];
 let waterMeshes={}, labelSprites={}, connObjs=[], ioObjs=[], handles=[], pickChambers=[];
 let bounds=null, hsz=0.15;
 let selected=null;            // selected chamber id — only its edit handles are shown
@@ -893,6 +895,10 @@ let chamberEdges={};          // id -> {edge, color} for selection highlighting
 const PALETTE=[0x4aa3ff,0x3fb950,0xe0883e,0xa371f7,0x56d4dd,0xf2c14e,0xf85149,0xbc8cff];
 
 const cc = c => new THREE.Vector3(c.x+c.length/2, 0, c.y+c.width/2);
+function pathLen(pts){ let L=0; for(let i=0;i<pts.length-1;i++) L+=pts[i].distanceTo(pts[i+1]); return L; }
+function pointAlong(pts,u){ const L=pathLen(pts)||1; let d=clamp(u,0,1)*L;
+  for(let i=0;i<pts.length-1;i++){ const seg=pts[i].distanceTo(pts[i+1]); if(d<=seg||i===pts.length-2) return pts[i].clone().lerp(pts[i+1], seg?clamp(d/seg,0,1):0); d-=seg; }
+  return pts[pts.length-1].clone(); }
 
 function computeBounds(){
   let mnX=Infinity,mxX=-Infinity,mnY=Infinity,mxY=-Infinity,mnZ=Infinity,mxZ=-Infinity;
@@ -913,7 +919,7 @@ function computeBounds(){
 function buildMeshes(){
   connObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
   ioObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
-  world.clear(); handleGroup.clear();
+  world.clear(); handleGroup.clear(); flowGroup.clear(); tracers=[];
   waterMeshes={}; labelSprites={}; connObjs=[]; ioObjs=[]; handles=[]; pickChambers=[]; chamberEdges={};
   if(!result) return;
   computeBounds();
@@ -1033,7 +1039,41 @@ function buildMeshes(){
   const gpos=new THREE.Vector3((bounds?bounds.minX:0)-1.2, gz, (bounds?bounds.minZ:0)-1.2);
   addHandleAt('ground','oct',{},gpos,0x6b86ad);
 
+  buildTracers(byId);
   updateHandleVis(camMode);
+}
+// animated flow tracers — moving dots along every flow path (tube/opening/spill/inflow/drain)
+function buildTracers(byId){
+  const mk=(pts,info)=>{ const N=Math.max(2,Math.min(7,Math.round(pathLen(pts)/(hsz*7))||3)); const markers=[];
+    for(let k=0;k<N;k++){ const m=new THREE.Mesh(new THREE.SphereGeometry(hsz*0.85,8,6),
+        new THREE.MeshBasicMaterial({color:0x8fe9ff,transparent:true,opacity:0.95,depthTest:false}));
+      m.renderOrder=14; m.visible=false; flowGroup.add(m); markers.push(m); }
+    tracers.push(Object.assign({pts,markers},info)); };
+  result.conns.forEach((c,ci)=>{
+    const A=byId.get(result.chambers[c.i].id), B=byId.get(result.chambers[c.j].id); if(!A||!B) return;
+    if(c.kind==='tube'){ const t=scene.tubes[c.ref]; if(!t) return; let pts=tubePath(t,A,B); if(A.id!==t.from) pts=pts.slice().reverse(); mk(pts,{ci}); }
+    else { const h=c.kind==='opening' ? (c.b+(isFinite(c.t)?c.t:c.b+0.4))/2 : c.b;
+      mk([new THREE.Vector3(A.x+A.length/2,h,A.y+A.width/2), new THREE.Vector3(B.x+B.length/2,h,B.y+B.width/2)], {ci}); }
+  });
+  (scene.inflows||[]).forEach(f=>{ if(f.open===false) return; const c=byId.get(f.to); if(!c) return;
+    const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2};
+    mk([new THREE.Vector3(at.x,c.floorZ+c.depth+0.5,at.y), new THREE.Vector3(at.x,c.floorZ+0.15,at.y)], {ci:-1,kind:'inflow'}); });
+  (scene.drains||[]).forEach(d=>{ if(d.open===false) return; const c=byId.get(d.from); if(!c) return;
+    const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}, z=d.z??c.floorZ;
+    mk([new THREE.Vector3(at.x,z,at.y), new THREE.Vector3(at.x,z-0.7,at.y)], {ci:-1,kind:'drain',chamberId:d.from,floorZ:c.floorZ,A:c.A,invert:z}); });
+}
+function animateFlow(ts){
+  if(!result||!tracers.length) return;
+  const fr=frameAt(result.frames,curT);
+  for(const tr of tracers){
+    let active=false, dir=1;
+    if(tr.kind==='inflow') active=true;
+    else if(tr.kind==='drain'){ const surf=tr.floorZ+lerpVal(result.frames,tr.chamberId,curT)/tr.A; active=surf>tr.invert+1e-4; }
+    else { const f=tr.ci>=0?(fr.connFlow[tr.ci]||0):0; active=Math.abs(f)>1e-9; dir=f>=0?1:-1; }
+    const N=tr.markers.length;
+    for(let k=0;k<N;k++){ const m=tr.markers[k]; if(!active){ m.visible=false; continue; }
+      m.visible=true; let u=((ts*0.0003)+(k/N))%1; if(dir<0) u=1-u; m.position.copy(pointAlong(tr.pts,u)); }
+  }
 }
 
 function mkValve(pos,open,data){
@@ -1574,9 +1614,10 @@ function loop(ts){
     const dt=(ts-lastTS)/1000; lastTS=ts;
     const H=result.totals.horizon||1;
     let nt=curT+dt*(+$('#speed').value);
-    if(nt>=H) nt=nt-H>=0 && nt-H<H ? nt-H : 0;   // loop continuously; only the user pauses
+    if(nt>=H) nt=H;   // reach steady state and hold — flow keeps cycling; only the user pauses
     setTime(nt);
   } else lastTS=ts;
+  animateFlow(ts);
   controls.update();
   updateLabelScale();
   renderer.render(three.scene,camera);
