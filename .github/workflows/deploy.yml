@@ -1,0 +1,22 @@
+name: Mirror main to Pages branch
+# GitHub Pages serves from the `claude/quirky-sagan-zjjssa` branch. This mirrors
+# every push to `main` onto that branch so merges go live automatically.
+# (One-time alternative: set Settings → Pages → Source to `main` and delete this.)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mirror-pages
+  cancel-in-progress: true
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push main → deploy branch
+        run: git push origin HEAD:claude/quirky-sagan-zjjssa --force
