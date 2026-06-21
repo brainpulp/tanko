@@ -506,15 +506,20 @@ const PRESETS = {
     drains:[{from:'B',z:0.1,diameter:0.4,open:true}],
     inflows:[{to:'A',rate:5,open:true}],
   },
-  // stepped, touching chambers — each spills over its lower neighbour's rim.
+  // stepped, touching chambers — each tips over a rim notch (3-sided opening) into
+  // its lower neighbour, so water cascades down instead of filling to the brim first.
   cascade: {
     chambers:[
       {id:'A',name:'Top',x:0,y:0,length:6,width:2,depth:1,floorZ:2},
-      {id:'B',name:'Mid',x:6,y:0,length:6,width:2,depth:1,floorZ:1.2},
-      {id:'C',name:'Low',x:12,y:0,length:6,width:2,depth:1,floorZ:0.4},
+      {id:'B',name:'Mid',x:6,y:0,length:6,width:2,depth:1,floorZ:1.5},
+      {id:'C',name:'Low',x:12,y:0,length:6,width:2,depth:1,floorZ:1},
     ],
-    openings:[], tubes:[],
-    drains:[{from:'C',z:0.6,diameter:0.5,open:true}],
+    openings:[
+      {a:'A',b:'B',width:1.6,zBot:2.05,zTop:2.5},   // notch to B's rim (2.5)
+      {a:'B',b:'C',width:1.6,zBot:1.55,zTop:2.0},   // notch to C's rim (2.0)
+    ],
+    tubes:[],
+    drains:[{from:'C',z:1.2,diameter:0.5,open:true}],
     inflows:[{to:'A',rate:12,open:true}],
   },
   // P↔Q joined low by a tube (communicating vessels); Q→R through a window; R drains.
