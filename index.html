@@ -69,6 +69,14 @@
   #hedit label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
   #hedit input{width:64px;background:#0d1117;border:1px solid var(--line);border-radius:4px;color:var(--ink);font:600 12px ui-monospace,monospace;padding:2px 5px;text-align:right}
   #hedit input:focus{outline:none;border-color:#4aa3ff}
+  #charts{display:flex;flex-direction:column;gap:7px;margin:2px 0 6px}
+  .chart{background:rgba(255,255,255,.02);border:1px solid var(--line);border-radius:6px;padding:5px 7px}
+  .ctitle{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
+  .cbar{display:flex;align-items:center;gap:5px;margin:1.5px 0}
+  .cid{width:13px;font-weight:600;font-size:10px;font-family:ui-monospace,monospace}
+  .ctrack{flex:1;height:7px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden}
+  .cfill{height:100%;border-radius:3px}
+  .cval{width:40px;text-align:right;font-size:9px;color:var(--muted);font-family:ui-monospace,monospace}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:2px}
   #transport{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:flex;flex-direction:column;gap:7px}
   #scrubrow{display:flex;align-items:center;gap:10px}
@@ -207,6 +215,9 @@
       <h2>System</h2>
       <div id="totals"></div>
       <div id="warn"></div>
+
+      <h2>Live</h2>
+      <div id="charts"></div>
 
       <h2>Chambers</h2>
       <table id="perChamber">
@@ -754,8 +765,41 @@ function renderResults(){
     track.appendChild(tk);
   });
   $('#scrub').max=String(Math.max(1,Math.round(H)));
+  renderCharts();
 }
 function statusForEvent(e){ return e==='spill'?'spilling':e==='start'?'filling':e==='full'?'full':'overflow'; }
+
+// compact live bar charts (fill %, volume, water height) in the right sidebar
+function renderCharts(){
+  const el=$('#charts'); if(!el||!result) return;
+  const per=result.per;
+  if(!per.length){ el.innerHTML='<div class="empty">no chambers</div>'; return; }
+  const maxVol=Math.max(1e-9,...per.map(p=>p.capToRim));
+  const maxRim=Math.max(...per.map(p=>p.rimZ)), minFloor=Math.min(...per.map(p=>p.floorZ));
+  const hex=i=>'#'+PALETTE[i%PALETTE.length].toString(16).padStart(6,'0');
+  const charts=[['fill %','fill'],['volume m³','vol'],['water height m','ht']];
+  el.innerHTML=charts.map(([title,key])=>`<div class="chart"><div class="ctitle">${title}</div>`+
+    per.map((p,i)=>`<div class="cbar"><span class="cid" style="color:${hex(i)}">${p.id}</span>`+
+      `<div class="ctrack"><div class="cfill" data-k="${key}" data-i="${i}" style="background:${hex(i)}"></div></div>`+
+      `<span class="cval" data-vk="${key}" data-i="${i}"></span></div>`).join('')+`</div>`).join('');
+  el.dataset.maxvol=maxVol; el.dataset.maxrim=maxRim; el.dataset.minfloor=minFloor;
+  updateCharts();
+}
+function updateCharts(){
+  const el=$('#charts'); if(!el||!result||!result.per.length) return;
+  const maxVol=+el.dataset.maxvol||1, maxRim=+el.dataset.maxrim||1, minFloor=+el.dataset.minfloor||0;
+  const span=Math.max(1e-9,maxRim-minFloor);
+  result.per.forEach((p,i)=>{
+    const vol=lerpVal(result.frames,p.id,curT);
+    const lvl=Math.min(p.floorZ+(p.A?vol/p.A:0), p.rimZ);          // water surface elevation
+    const vals={fill:p.capToRim?100*vol/p.capToRim:0, vol:100*vol/maxVol, ht:100*(lvl-minFloor)/span};
+    const disp={fill:Math.round(Math.min(100,vals.fill))+'%', vol:vol.toFixed(1), ht:lvl.toFixed(2)};
+    for(const k of ['fill','vol','ht']){
+      const bar=el.querySelector(`.cfill[data-k="${k}"][data-i="${i}"]`); if(bar) bar.style.width=clamp(vals[k],0,100)+'%';
+      const cell=el.querySelector(`.cval[data-vk="${k}"][data-i="${i}"]`); if(cell) cell.textContent=disp[k];
+    }
+  });
+}
 
 /* ============================================================
    THREE.JS RENDERER
@@ -978,6 +1022,18 @@ function snapToWall(c,x,y){
   if(m===dL) return {x:x1,y:py}; if(m===dR) return {x:x2,y:py};
   if(m===dB) return {x:px,y:y1}; return {x:px,y:y2};
 }
+// snap a moving edge coord to any neighbour chamber's wall on the same axis; report the hit
+function snapEdge(c,val,axisX){
+  const others=scene.chambers.filter(x=>x!==c); let hit=null;
+  for(const o of others){ const cs=axisX?[o.x,o.x+o.length]:[o.y,o.y+o.width];
+    for(const sc of cs) if(Math.abs(sc-val)<snapTol()){ val=sc; hit={c:o,coord:sc,axisX}; break; }
+    if(hit) break; }
+  return {val,hit};
+}
+// flash the snapped-to wall red (same feedback as tube ends), or clear if none
+function hlSnap(hit){ if(!hit){ clearSnapHL(); return; }
+  const o=hit.c, at=hit.axisX?{x:hit.coord,y:o.y+o.width/2}:{x:o.x+o.length/2,y:hit.coord};
+  showSnapWall(o,at); }
 function ensureTubeAttach(t,a,b){
   if(!t.fromAt) t.fromAt=wallAttach(a,b);
   if(!t.toAt) t.toAt=wallAttach(b,a);
@@ -987,7 +1043,8 @@ function wallOutward(c,at){
   if(Math.abs(at.x-c.x)<1e-6) return new THREE.Vector3(-1,0,0);
   if(Math.abs(at.x-(c.x+c.length))<1e-6) return new THREE.Vector3(1,0,0);
   if(Math.abs(at.y-c.y)<1e-6) return new THREE.Vector3(0,0,-1);
-  return new THREE.Vector3(0,0,1);
+  if(Math.abs(at.y-(c.y+c.width))<1e-6) return new THREE.Vector3(0,0,1);
+  return new THREE.Vector3(0,0,0);   // interior point → attached to the bottom, no offset
 }
 // orthogonal polyline (world coords, y=height) routed UNDER all chambers
 function tubePath(t,a,b){
@@ -1246,7 +1303,9 @@ canvas.addEventListener('pointermove', e=>{
   if(u.kind==='rim'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.depth=Math.max(0.05,r3(p.y-c.floorZ)); }
   else if(u.kind==='floor'){ const c=scene.chambers.find(x=>x.id===u.chamber); const rim=s.floorZ+s.depth; const nf=Math.min(p.y,rim-0.05); c.floorZ=r3(nf); c.depth=r3(rim-nf); }
   else if(u.kind==='move'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.x=r3(s.x+(p.x-drag.grab.x)); c.y=r3(s.y+(p.z-drag.grab.z)); }
-  else if(u.kind==='size'){ const c=scene.chambers.find(x=>x.id===u.chamber); c.length=Math.max(0.3,r3(p.x-c.x)); c.width=Math.max(0.3,r3(p.z-c.y)); }
+  else if(u.kind==='size'){ const c=scene.chambers.find(x=>x.id===u.chamber);
+    const sx=snapEdge(c,p.x,true), sz=snapEdge(c,p.z,false);
+    c.length=Math.max(0.3,r3(sx.val-c.x)); c.width=Math.max(0.3,r3(sz.val-c.y)); hlSnap(sx.hit||sz.hit); }
   else if(u.kind==='wall'){ dragWall(u,s,p,r3); }
   else if(u.kind==='op_bot'){ const o=scene.openings[u.opening];
     const A=scene.chambers.find(x=>x.id===o.a),B=scene.chambers.find(x=>x.id===o.b);
@@ -1264,7 +1323,13 @@ canvas.addEventListener('pointermove', e=>{
       if(camMode==='sideX'||camMode==='sideY'){ let z=p.y; const fl=c.floorZ, rm=c.floorZ+c.depth, tol=snapTol();
         if(Math.abs(z-fl)<tol) z=fl; else if(Math.abs(z-rm)<tol) z=rm;
         if(end) t.fromZ=r3(clamp(z,fl,rm)); else t.toZ=r3(clamp(z,fl,rm)); }
-      else { const sn=snapToWall(c,p.x,p.z); const at={x:r3(sn.x),y:r3(sn.y)}; if(end) t.fromAt=at; else t.toAt=at; showSnapWall(c,at); } } }
+      else { // plan drag: near a wall → snap to it (keep height); interior → attach to the bottom
+        const px=clamp(p.x,c.x,c.x+c.length), pz=clamp(p.z,c.y,c.y+c.width);
+        const m=Math.min(px-c.x, c.x+c.length-px, pz-c.y, c.y+c.width-pz);
+        let at;
+        if(m<snapTol()*1.5){ const sn=snapToWall(c,px,pz); at={x:r3(sn.x),y:r3(sn.y)}; showSnapWall(c,at); }
+        else { at={x:r3(px),y:r3(pz)}; clearSnapHL(); if(end) t.fromZ=r3(c.floorZ); else t.toZ=r3(c.floorZ); }
+        if(end) t.fromAt=at; else t.toAt=at; } } }
   else if(u.kind==='io_move'){ const f=scene.inflows[u.inflow]; const c=scene.chambers.find(x=>x.id===f.to); f.at={x:r3(clamp(p.x,c.x,c.x+c.length)),y:r3(clamp(p.z,c.y,c.y+c.width))}; }
   else if(u.kind==='drain_move'){ const d=scene.drains[u.drain]; d.z=r3(p.y); }
   if(editor) showEditor(e.clientX,e.clientY,false);
@@ -1276,14 +1341,6 @@ canvas.addEventListener('pointercancel',endDrag);
 canvas.addEventListener('pointerleave',()=>{ $('#tip').style.display='none'; });
 
 /* ---------- inline numeric editor (type-to-set, Enter/Tab commit, Tab→next field) ---------- */
-function fieldsForChamber(c){ return [
-  {label:'x',      get:()=>c.x,      set:v=>c.x=v},
-  {label:'y',      get:()=>c.y,      set:v=>c.y=v},
-  {label:'floor',  get:()=>c.floorZ, set:v=>{ const rim=c.floorZ+c.depth; c.floorZ=v; c.depth=Math.max(0.05,rim-v); }},
-  {label:'length', get:()=>c.length, set:v=>c.length=Math.max(0.3,v)},
-  {label:'width',  get:()=>c.width,  set:v=>c.width=Math.max(0.3,v)},
-  {label:'depth',  get:()=>c.depth,  set:v=>c.depth=Math.max(0.05,v)},
-]; }
 function fieldsForOpening(o){ return [
   {label:'bottom', get:()=>o.zBot??0,  set:v=>o.zBot=v},
   {label:'top',    get:()=>o.zTop??1,  set:v=>o.zTop=v},
@@ -1293,14 +1350,30 @@ function fieldsForOpening(o){ return [
 function buildEditor(u){
   if(u.chamber!=null && ['move','size','rim','floor','wall'].includes(u.kind)){
     const c=scene.chambers.find(x=>x.id===u.chamber); if(!c) return null;
-    const idx = u.kind==='move'?0 : u.kind==='floor'?2 : u.kind==='rim'?5 : u.kind==='size'?3
-              : (u.side==='x1'||u.side==='x2')?3:4;
-    return {targets:fieldsForChamber(c), idx};
+    const fx={label:'x',get:()=>c.x,set:v=>c.x=v};
+    const fy={label:'y',get:()=>c.y,set:v=>c.y=v};
+    const fL={label:'length',get:()=>c.length,set:v=>c.length=Math.max(0.3,v)};
+    const fW={label:'width', get:()=>c.width, set:v=>c.width=Math.max(0.3,v)};
+    // "height" = chamber height (depth), shown for rim/floor handles instead of ground distance.
+    const hFloorFixed={label:'height',get:()=>c.depth,set:v=>c.depth=Math.max(0.05,v)};              // rim moves
+    const hRimFixed  ={label:'height',get:()=>c.depth,set:v=>{ const rim=c.floorZ+c.depth; c.depth=Math.max(0.05,v); c.floorZ=rim-c.depth; }}; // floor moves
+    if(u.kind==='rim')   return {targets:[hFloorFixed,fx,fy,fL,fW], idx:0};
+    if(u.kind==='floor') return {targets:[hRimFixed,fx,fy,fL,fW], idx:0};
+    const targets=[fx,fy,fL,fW,hFloorFixed];
+    const idx = u.kind==='move'?0 : u.kind==='size'?2 : (u.side==='x1'||u.side==='x2')?2:3;
+    return {targets, idx};
   }
   if(u.opening!=null){ const o=scene.openings[u.opening]; if(!o) return null;
     return {targets:fieldsForOpening(o), idx: u.kind==='op_bot'?0 : u.kind==='op_top'?1 : 2}; }
   if(u.tube!=null){ const t=scene.tubes[u.tube]; if(!t) return null; const end=(u.end==='a');
-    return {targets:[{label:'height',get:()=>end?t.fromZ:t.toZ,set:v=>{ if(end)t.fromZ=v; else t.toZ=v; }}], idx:0}; }
+    const c=scene.chambers.find(x=>x.id===(end?t.from:t.to));
+    const aK=end?'fromAt':'toAt', zK=end?'fromZ':'toZ';
+    const at=()=>{ if(!t[aK]) t[aK]={x:0,y:0}; return t[aK]; };
+    const fH={label:'height',get:()=>t[zK]??0,set:v=>t[zK]=c?clamp(v,c.floorZ,c.floorZ+c.depth):v};
+    const fX={label:'x',get:()=>at().x,set:v=>at().x=c?clamp(v,c.x,c.x+c.length):v};
+    const fY={label:'y',get:()=>at().y,set:v=>at().y=c?clamp(v,c.y,c.y+c.width):v};
+    const side=(camMode==='sideX'||camMode==='sideY');
+    return {targets:[fH,fX,fY], idx: side?0:1}; }
   if(u.kind==='ground') return {targets:[{label:'ground',get:()=>scene.groundZ||0,set:v=>scene.groundZ=v}], idx:0};
   return null;
 }
@@ -1330,11 +1403,9 @@ function dragWall(u,s,p,r3){
   const c=scene.chambers.find(x=>x.id===u.chamber);
   const others=scene.chambers.filter(x=>x!==c);
   const horiz=(u.side==='x1'||u.side==='x2');
-  // candidate snap coords from other chambers' walls on this axis
-  const snaps=[]; for(const o of others){ if(horiz){ snaps.push(o.x,o.x+o.length); } else { snaps.push(o.y,o.y+o.width); } }
-  let val = horiz?p.x:p.z;
-  for(const sc of snaps) if(Math.abs(sc-val)<snapTol()){ val=sc; break; }
-  val=r3(val);
+  // snap this wall to a neighbour's wall on the same axis; flash the neighbour wall red
+  const sn=snapEdge(c, horiz?p.x:p.z, horiz); hlSnap(sn.hit);
+  let val=r3(sn.val);
   const overlapsPerp=(o)=> horiz ? (Math.min(c.y+c.width,o.y+o.width)-Math.max(c.y,o.y)>0.02)
                                  : (Math.min(c.x+c.length,o.x+o.length)-Math.max(c.x,o.x)>0.02);
   if(u.side==='x2'){ let lim=Infinity; for(const o of others) if(overlapsPerp(o)&&o.x>=s.x+s.length-0.06) lim=Math.min(lim,o.x); val=Math.min(val,lim); c.length=Math.max(0.3,r3(val-c.x)); }
@@ -1421,7 +1492,7 @@ function updateScene(t){
   for(const p of result.per){ const vol=lerpVal(result.frames,p.id,t); hud.push(`<b>${p.id}</b> ${vol.toFixed(1)}m³ <span style="color:var(--muted)">${p.status}</span>`); }
   $('#hud').innerHTML=hud.join('<br>');
 }
-function setTime(t){ curT=t; $('#scrub').value=String(Math.round(t)); $('#clock').textContent=fmtTime(t); updateScene(t); if(result) renderPerChamberFill(); }
+function setTime(t){ curT=t; $('#scrub').value=String(Math.round(t)); $('#clock').textContent=fmtTime(t); updateScene(t); if(result){ renderPerChamberFill(); updateCharts(); } }
 function renderPerChamberFill(){ /* fill % in right table updates with time */
   const rows=$('#perChamber').querySelectorAll('tbody tr');
   result.per.forEach((p,i)=>{ const vol=lerpVal(result.frames,p.id,curT); const pct=p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0; const cell=rows[i]&&rows[i].children[2]; if(cell) cell.textContent=pct+'%'; });
@@ -1434,8 +1505,9 @@ function loop(ts){
   requestAnimationFrame(loop);
   if(playing && result){
     const dt=(ts-lastTS)/1000; lastTS=ts;
+    const H=result.totals.horizon||1;
     let nt=curT+dt*(+$('#speed').value);
-    if(nt>=result.totals.horizon){ nt=result.totals.horizon; playing=false; $('#play').textContent='▶ Play'; }
+    if(nt>=H) nt=nt-H>=0 && nt-H<H ? nt-H : 0;   // loop continuously; only the user pauses
     setTime(nt);
   } else lastTS=ts;
   controls.update();
