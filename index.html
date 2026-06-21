@@ -62,6 +62,9 @@
   #hud b{color:var(--accent)}
   #handlehint{position:absolute;bottom:10px;left:10px;z-index:5;background:rgba(13,17,23,.82);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:10.5px;color:var(--muted);max-width:54%;line-height:1.5}
   #handlehint b{color:var(--ink)}
+  #tip{position:absolute;z-index:7;display:none;pointer-events:none;background:rgba(13,17,23,.94);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:11px;line-height:1.45;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+  #tip .k{font-weight:600}
+  #tip .h{color:var(--muted);font-size:10px}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:2px}
   #transport{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:flex;flex-direction:column;gap:7px}
   #scrubrow{display:flex;align-items:center;gap:10px}
@@ -149,6 +152,7 @@
     <div id="view">
       <div id="canvasWrap">
         <canvas id="cv"></canvas>
+        <div id="tip"></div>
         <div id="cammenu">
           <button class="sm" data-cam="top">Top</button>
           <button class="sm" data-cam="sideY">Side Y</button>
@@ -291,7 +295,9 @@ function simulate(scene, opts={}){
     const seg = sharedSegment(chambers[i], chambers[j]);
     if(!seg) continue;
     sharedLen[i]+=seg.len; sharedLen[j]+=seg.len;
-    conns.push({kind:'spill', i, j, b:Math.min(chambers[i].rimZ,chambers[j].rimZ), t:Infinity, w:seg.len});
+    // crest of the shared partition = the taller wall actually standing between them.
+    // (a deliberately low spillway is modelled explicitly as an opening.)
+    conns.push({kind:'spill', i, j, b:Math.max(chambers[i].rimZ,chambers[j].rimZ), t:Infinity, w:seg.len});
   }
   // loss to the wild over exposed perimeter (own rim)
   for(let i=0;i<n;i++){
@@ -896,7 +902,9 @@ function buildMeshes(){
 }
 
 function mkValve(pos,open,data){
-  const m=new THREE.Mesh(new THREE.SphereGeometry(hsz*1.1,12,10),new THREE.MeshBasicMaterial({color:open?0x3fb950:0xf85149,depthTest:false}));
+  // solid disc/puck — reads as a valve wheel and stays distinct from the spherical
+  // tube-end handles, while remaining easy to click (no center hole like a torus).
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.25,hsz*1.25,hsz*0.7,16),new THREE.MeshBasicMaterial({color:open?0x3fb950:0xf85149,depthTest:false}));
   m.position.copy(pos); m.renderOrder=12; m.userData=data; handles.push(m);
   return {obj:m};
 }
@@ -939,13 +947,29 @@ function drawLabel(spr,l1,l2){
   texture.needsUpdate=true;
 }
 function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
-// keep chamber labels a constant on-screen size regardless of ortho zoom/fit,
-// so they stay readable and don't overlap in tightly-fitted side views.
+// keep chamber labels a constant on-screen size, and push overlapping ones apart
+// vertically in screen space each frame so parallel chambers never collide.
 function updateLabelScale(){
-  const hpx=canvas.clientHeight||1;
+  const hpx=canvas.clientHeight||1, wpx=canvas.clientWidth||1;
   const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
   const H=42*worldPerPx;            // ~42px-tall label box (canvas is 256x64 → 4:1)
-  for(const id in labelSprites){ const s=labelSprites[id]; if(s) s.scale.set(H*4,H,1); }
+  const up=camera.up.clone().normalize();
+  const items=[];
+  for(const id in labelSprites){ const s=labelSprites[id]; if(!s) continue;
+    s.scale.set(H*4,H,1);
+    if(!s.userData.basePos) s.userData.basePos=s.position.clone();
+    s.position.copy(s.userData.basePos);           // reset, then re-resolve overlaps
+    const w=new THREE.Vector3(); s.getWorldPosition(w); const v=w.clone().project(camera);
+    items.push({s, sx:(v.x+1)/2*wpx, sy:(1-v.y)/2*hpx});
+  }
+  items.sort((a,b)=>a.sy-b.sy);
+  const gapY=46, nearX=150;
+  for(let k=1;k<items.length;k++){ const a=items[k-1], b=items[k];
+    if(Math.abs(b.sx-a.sx)<nearX && b.sy-a.sy<gapY){
+      const push=gapY-(b.sy-a.sy);                  // move b further down-screen (−up)
+      b.s.position.addScaledVector(up,-push*worldPerPx); b.sy+=push;
+    }
+  }
 }
 
 // which chamber(s) a handle/valve belongs to — used to reveal handles only for the selected chamber
@@ -1063,11 +1087,45 @@ function stateFor(u){
   return {};
 }
 
+// friendly name + drag hint for each handle, for hover tooltips
+function handleInfo(u){
+  if(!u) return null;
+  if(u.valveTube!=null) return {k:'Tube valve',h:'click to open / close',c:0x3fb950};
+  if(u.valveInflow!=null) return {k:'Inflow valve',h:'click to open / close',c:0x3fb950};
+  if(u.valveDrain!=null) return {k:'Drain valve',h:'click to open / close',c:0xf85149};
+  return ({
+    rim:{k:'Rim height',h:'drag ↕ to set wall top',c:0x4aa3ff},
+    floor:{k:'Floor level',h:'drag ↕ to set bottom',c:0xd29922},
+    move:{k:'Move chamber',h:'drag across the ground',c:0x3fb950},
+    size:{k:'Resize chamber',h:'drag the far corner',c:0xa371f7},
+    wall:{k:'Wall',h:'drag to resize · snaps to neighbours',c:0x8b98a8},
+    op_bot:{k:'Opening bottom',h:'drag ↕',c:0xd29922},
+    op_top:{k:'Opening top',h:'drag ↕ (above crest → cascade)',c:0x4aa3ff},
+    op_w:{k:'Opening width',h:'drag',c:0xa371f7},
+    op_move:{k:'Move opening',h:'drag along the wall',c:0x3fb950},
+    tube_a:{k:'Tube end A',h:'drag ↕ to set invert',c:0x4aa3ff},
+    tube_b:{k:'Tube end B',h:'drag ↕ to set invert',c:0x4aa3ff},
+    io_move:{k:'Inflow',h:'drag to reposition',c:0x3aa0ff},
+    drain_move:{k:'Drain',h:'drag ↕ to set height',c:0xf85149},
+  })[u.kind]||null;
+}
+function showTip(info,e){ const t=$('#tip'); if(!info){ t.style.display='none'; return; }
+  const hex='#'+((info.c>>>0)&0xffffff).toString(16).padStart(6,'0');
+  const r=canvas.getBoundingClientRect();
+  t.innerHTML=`<span class="k" style="color:${hex}">${info.k}</span><br><span class="h">${info.h}</span>`;
+  t.style.display='block'; t.style.left=(e.clientX-r.left+14)+'px'; t.style.top=(e.clientY-r.top+14)+'px';
+}
 canvas.addEventListener('pointermove', e=>{
   if(!drag){
-    if(result && tool==='select'){ ray.setFromCamera(ndc(e),camera); const hov=ray.intersectObjects(handles.filter(h=>h.visible),false).length?'grab':(ray.intersectObjects(pickChambers,false).length?'pointer':''); canvas.style.cursor=hov; }
+    if(result && tool==='select'){
+      ray.setFromCamera(ndc(e),camera);
+      const hh=ray.intersectObjects(handles.filter(h=>h.visible),false)[0];
+      canvas.style.cursor = hh?'grab':(ray.intersectObjects(pickChambers,false).length?'pointer':'');
+      showTip(hh?handleInfo(hh.object.userData):null, e);
+    } else $('#tip').style.display='none';
     return;
   }
+  $('#tip').style.display='none';
   ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
   if(!ray.ray.intersectPlane(drag.plane,p)) return;
   const u=drag.u, s=drag.start, r3=x=>Math.round(x*1000)/1000;
@@ -1089,6 +1147,7 @@ canvas.addEventListener('pointermove', e=>{
 function endDrag(){ if(!drag) return; drag=null; controls.enabled=true; canvas.style.cursor=''; recompute(); }
 canvas.addEventListener('pointerup',endDrag);
 canvas.addEventListener('pointercancel',endDrag);
+canvas.addEventListener('pointerleave',()=>{ $('#tip').style.display='none'; });
 
 function dragWall(u,s,p,r3){
   const c=scene.chambers.find(x=>x.id===u.chamber);
