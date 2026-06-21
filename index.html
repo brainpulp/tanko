@@ -751,7 +751,7 @@ const three={scene:new THREE.Scene()};
 three.scene.background=new THREE.Color(0x0b0f15);
 three.scene.add(new THREE.AmbientLight(0xffffff,0.8));
 const dl=new THREE.DirectionalLight(0xffffff,0.65); dl.position.set(1,2,1.5); three.scene.add(dl);
-const grid=new THREE.GridHelper(80,80,0x223047,0x161f2c); grid.material.opacity=0.5; grid.material.transparent=true; three.scene.add(grid);
+const grid=new THREE.GridHelper(80,80,0x1c2738,0x141c28); grid.material.opacity=0.32; grid.material.transparent=true; three.scene.add(grid);
 
 let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
 const controls=new OrbitControls(camera,renderer.domElement);
@@ -761,6 +761,9 @@ let world=new THREE.Group(); three.scene.add(world);
 let handleGroup=new THREE.Group(); three.scene.add(handleGroup);
 let waterMeshes={}, labelSprites={}, connObjs=[], ioObjs=[], handles=[], pickChambers=[];
 let bounds=null, hsz=0.15;
+let selected=null;            // selected chamber id — only its edit handles are shown
+let chamberEdges={};          // id -> {edge, color} for selection highlighting
+const PALETTE=[0x4aa3ff,0x3fb950,0xe0883e,0xa371f7,0x56d4dd,0xf2c14e,0xf85149,0xbc8cff];
 
 const cc = c => new THREE.Vector3(c.x+c.length/2, 0, c.y+c.width/2);
 
@@ -784,25 +787,36 @@ function buildMeshes(){
   connObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
   ioObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
   world.clear(); handleGroup.clear();
-  waterMeshes={}; labelSprites={}; connObjs=[]; ioObjs=[]; handles=[]; pickChambers=[];
+  waterMeshes={}; labelSprites={}; connObjs=[]; ioObjs=[]; handles=[]; pickChambers=[]; chamberEdges={};
   if(!result) return;
   computeBounds();
   const byId=new Map(result.chambers.map(d=>[d.id,d]));
 
-  for(const d of result.chambers){
+  result.chambers.forEach((d,ci)=>{
+    const col=PALETTE[ci%PALETTE.length];
     const g=new THREE.Group(); g.position.set(d.x+d.length/2,0,d.y+d.width/2);
     const box=new THREE.BoxGeometry(d.length,d.depth,d.width);
-    const wall=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color:0x5b6b80}));
+    const wall=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.7}));
     wall.position.y=d.floorZ+d.depth/2; g.add(wall);
+    chamberEdges[d.id]={edge:wall,color:col};
+    // faint colored fill so the basin reads as a distinct volume
+    const fill=new THREE.Mesh(box.clone(),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.05,depthWrite:false}));
+    fill.position.y=d.floorZ+d.depth/2; g.add(fill);
     const floor=new THREE.Mesh(new THREE.BoxGeometry(d.length,0.01,d.width),new THREE.MeshBasicMaterial({color:0x1b2433}));
     floor.position.y=d.floorZ; g.add(floor);
-    // pick proxy (invisible) for tool clicks
+    // pick proxy (invisible) for tool clicks & selection
     const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
     pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
     const wgeo=new THREE.BoxGeometry(d.length*0.95,1,d.width*0.95);
     const water=new THREE.Mesh(wgeo,new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:0.45}));
     water.visible=false; g.add(water); waterMeshes[d.id]={mesh:water,d};
-    const spr=makeLabel(d.id); spr.position.set(0,d.rimZ+hsz*4,0); g.add(spr); labelSprites[d.id]=spr;
+    // label: color-matched, pinned just off the chamber's near end, with a leader line and per-index stagger
+    const off=0.5+(ci%3)*0.45;
+    const anchor=new THREE.Vector3(-d.length/2, d.rimZ, 0);
+    const labelLocal=new THREE.Vector3(-d.length/2-off, d.rimZ+hsz*4+(ci%2)*hsz*6, 0);
+    const spr=makeLabel(d.id,col); spr.position.copy(labelLocal); g.add(spr); labelSprites[d.id]=spr;
+    const leader=new THREE.Line(new THREE.BufferGeometry().setFromPoints([labelLocal,anchor]),
+      new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.45})); g.add(leader);
     world.add(g);
 
     // chamber handles
@@ -816,7 +830,7 @@ function buildMeshes(){
     addWall(d, 'x1', d.x,          d.floorZ+d.depth/2, cz);
     addWall(d, 'y2', cx,           d.floorZ+d.depth/2, d.y+d.width);
     addWall(d, 'y1', cx,           d.floorZ+d.depth/2, d.y);
-  }
+  });
 
   // openings — drawn as a framed rectangle on the shared wall, with handles
   scene.openings.forEach((o,i)=>{
@@ -907,19 +921,21 @@ function addWall(d,side,x,y,z){
   handleGroup.add(m); handles.push(m);
 }
 
-function makeLabel(text){
+function makeLabel(text,color){
   const cv=document.createElement('canvas'); cv.width=256; cv.height=64;
   const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
-  spr.scale.set(2.4,0.6,1); spr.userData={cv,ctx:cv.getContext('2d'),texture:spr.material.map};
+  spr.scale.set(2.4,0.6,1); spr.userData={cv,ctx:cv.getContext('2d'),texture:spr.material.map,color:color??0xe6edf3};
   drawLabel(spr,text,''); return spr;
 }
 function drawLabel(spr,l1,l2){
-  const {cv,ctx,texture}=spr.userData;
+  const {cv,ctx,texture,color}=spr.userData;
+  const hex='#'+((color>>>0)&0xffffff).toString(16).padStart(6,'0');
   ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='rgba(13,17,23,0.82)'; rr(ctx,2,2,252,60,8); ctx.fill();
-  ctx.fillStyle='#e6edf3'; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
-  ctx.fillText(l1,12,l2?20:32);
-  if(l2){ ctx.fillStyle='#8b98a8'; ctx.font='19px ui-monospace,monospace'; ctx.fillText(l2,12,46); }
+  ctx.fillStyle='rgba(13,17,23,0.92)'; rr(ctx,2,2,252,60,8); ctx.fill();
+  ctx.fillStyle=hex; rr(ctx,4,6,7,52,3); ctx.fill();               // color accent bar
+  ctx.fillStyle=hex; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
+  ctx.fillText(l1,20,l2?20:32);
+  if(l2){ ctx.fillStyle='#c9d4e0'; ctx.font='19px ui-monospace,monospace'; ctx.fillText(l2,20,46); }
   texture.needsUpdate=true;
 }
 function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
@@ -932,21 +948,42 @@ function updateLabelScale(){
   for(const id in labelSprites){ const s=labelSprites[id]; if(s) s.scale.set(H*4,H,1); }
 }
 
+// which chamber(s) a handle/valve belongs to — used to reveal handles only for the selected chamber
+function handleChambers(u){
+  if(!u) return [];
+  if(u.chamber!=null) return [u.chamber];
+  if(u.opening!=null){ const o=scene.openings[u.opening]; return o?[o.a,o.b]:[]; }
+  if(u.tube!=null){ const t=scene.tubes[u.tube]; return t?[t.from,t.to]:[]; }
+  if(u.valveTube!=null){ const t=scene.tubes[u.valveTube]; return t?[t.from,t.to]:[]; }
+  if(u.inflow!=null){ const f=scene.inflows[u.inflow]; return f?[f.to]:[]; }
+  if(u.valveInflow!=null){ const f=scene.inflows[u.valveInflow]; return f?[f.to]:[]; }
+  if(u.drain!=null){ const dr=scene.drains[u.drain]; return dr?[dr.from]:[]; }
+  if(u.valveDrain!=null){ const dr=scene.drains[u.valveDrain]; return dr?[dr.from]:[]; }
+  return [];
+}
+function updateSelectionHighlight(){
+  for(const id in chamberEdges){ const e=chamberEdges[id], sel=String(id)===String(selected);
+    e.edge.material.color.set(sel?0xffffff:e.color); e.edge.material.opacity=sel?1:0.55; }
+}
 function updateHandleVis(mode){
-  const vert = mode!=='top';   // rim/floor/walls vertical-ish
+  const vert = mode!=='top';   // rim/floor vertical-ish
   const plan = mode==='top'||mode==='iso';
   for(const h of handles){
     const k=h.userData.kind;
-    if(k==='rim'||k==='floor') h.visible=vert;
-    else if(k==='size'||k==='move') h.visible=plan;
-    else if(k==='wall') h.visible=true;
-    else if(k==='op_bot'||k==='op_top') h.visible=vert;
-    else if(k==='op_w'||k==='op_move') h.visible=plan;
-    else h.visible=true;
+    let base;
+    if(k==='rim'||k==='floor') base=vert;
+    else if(k==='size'||k==='move') base=plan;
+    else if(k==='op_bot'||k==='op_top') base=vert;
+    else if(k==='op_w'||k==='op_move') base=plan;
+    else base=true;                              // walls, tube ends, io arrows, valves
+    h.visible = base && selected!=null && handleChambers(h.userData).includes(selected);
   }
+  updateSelectionHighlight();
   $('#handlehint').innerHTML = tool!=='select'
     ? `<b>${tool}</b> mode — ` + ({chamber:'click ground to place',opening:'click two adjacent chambers',tube:'click two chambers',inflow:'click a chamber',drain:'click a chamber',delete:'click a chamber / tube / opening / inflow / drain'}[tool]||'')
-    : `<b>handles:</b> <span class="dot" style="background:#4aa3ff"></span>rim <span class="dot" style="background:#d29922"></span>floor <span class="dot" style="background:#3fb950"></span>move <span class="dot" style="background:#a371f7"></span>size · grey bars = walls (snap) · click <span class="dot" style="background:#3fb950"></span>/<span class="dot" style="background:#f85149"></span> valves`;
+    : selected!=null
+      ? `editing <b>${selected}</b> · <span class="dot" style="background:#4aa3ff"></span>rim <span class="dot" style="background:#d29922"></span>floor <span class="dot" style="background:#3fb950"></span>move <span class="dot" style="background:#a371f7"></span>size · grey bars = walls · click <span class="dot" style="background:#3fb950"></span>/<span class="dot" style="background:#f85149"></span> valves · click empty space to deselect`
+      : `<b>click a chamber</b> to show its edit handles`;
 }
 
 /* ---------- camera ---------- */
@@ -987,8 +1024,14 @@ canvas.addEventListener('pointerdown', e=>{
   // tool actions
   if(tool!=='select'){ handleTool(e); return; }
   ray.setFromCamera(ndc(e),camera);
-  const hit=ray.intersectObjects(handles,false)[0];
-  if(!hit) return;
+  const hit=ray.intersectObjects(handles.filter(h=>h.visible),false)[0];
+  if(!hit){
+    // no handle grabbed → select the clicked chamber (or deselect on empty space)
+    const ch=ray.intersectObjects(pickChambers,false)[0];
+    const id=ch?ch.object.userData.chamber:null;
+    if(String(id)!==String(selected)){ selected=id; updateHandleVis(camMode); }
+    return;
+  }
   const h=hit.object, u=h.userData;
   // valve clicks
   if(u.valveTube!=null){ const t=scene.tubes[u.valveTube]; t.open=t.open===false; recompute(); return; }
@@ -1022,7 +1065,7 @@ function stateFor(u){
 
 canvas.addEventListener('pointermove', e=>{
   if(!drag){
-    if(result && tool==='select'){ ray.setFromCamera(ndc(e),camera); canvas.style.cursor=ray.intersectObjects(handles,false).length?'grab':''; }
+    if(result && tool==='select'){ ray.setFromCamera(ndc(e),camera); const hov=ray.intersectObjects(handles.filter(h=>h.visible),false).length?'grab':(ray.intersectObjects(pickChambers,false).length?'pointer':''); canvas.style.cursor=hov; }
     return;
   }
   ray.setFromCamera(ndc(e),camera); const p=new THREE.Vector3();
@@ -1066,7 +1109,7 @@ function dragWall(u,s,p,r3){
 
 let pendingPick=null;
 function handleTool(e){
-  if(tool==='chamber'){ const g=groundHit(e); if(!g) return; const id=nextId(); scene.chambers.push({id,name:'',x:r3(g.x)-2,y:r3(g.z)-1.5,length:4,width:3,depth:1.5,floorZ:0}); setTool('select'); recompute(); return; }
+  if(tool==='chamber'){ const g=groundHit(e); if(!g) return; const id=nextId(); scene.chambers.push({id,name:'',x:r3(g.x)-2,y:r3(g.z)-1.5,length:4,width:3,depth:1.5,floorZ:0}); selected=id; setTool('select'); recompute(); return; }
   const ch=chamberAt(e);
   if(tool==='inflow'){ if(!ch) return; scene.inflows.push({to:ch,rate:5,open:true}); setTool('select'); recompute(); return; }
   if(tool==='drain'){ if(!ch) return; const c=scene.chambers.find(x=>x.id===ch); scene.drains.push({from:ch,z:c.floorZ,diameter:0.2,open:true}); setTool('select'); recompute(); return; }
@@ -1086,7 +1129,7 @@ function handleTool(e){
 function deleteAt(e,ch){
   // try connections / inflow / drain first (closest object), else chamber
   ray.setFromCamera(ndc(e),camera);
-  const objs=connObjs.map(o=>o.obj).concat(handles).filter(Boolean);
+  const objs=connObjs.map(o=>o.obj).concat(handles.filter(h=>h.visible)).filter(Boolean);
   const hit=ray.intersectObjects(objs,false)[0];
   if(hit){
     const co=connObjs.find(o=>o.obj===hit.object);
@@ -1104,6 +1147,7 @@ function deleteAt(e,ch){
     scene.tubes=scene.tubes.filter(t=>t.from!==ch&&t.to!==ch);
     scene.inflows=scene.inflows.filter(f=>f.to!==ch);
     scene.drains=scene.drains.filter(d=>d.from!==ch);
+    if(String(selected)===String(ch)) selected=null;
     setTool('select'); recompute();
   }
 }
@@ -1164,13 +1208,13 @@ function loop(ts){
 /* ---------- wiring ---------- */
 document.querySelectorAll('[data-cam]').forEach(b=>b.addEventListener('click',()=>applyCam(b.dataset.cam)));
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
-document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{ scene=normalizeScene(clone(PRESETS[b.dataset.preset])); curT=0; recompute(); applyCam(camMode); }));
-$('#addChamber').onclick=()=>{ const id=nextId(); const n=scene.chambers.length; scene.chambers.push({id,name:'',x:0,y:n*4,length:4,width:3,depth:1.5,floorZ:0}); recompute(); };
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{ scene=normalizeScene(clone(PRESETS[b.dataset.preset])); curT=0; selected=null; recompute(); applyCam(camMode); }));
+$('#addChamber').onclick=()=>{ const id=nextId(); const n=scene.chambers.length; scene.chambers.push({id,name:'',x:0,y:n*4,length:4,width:3,depth:1.5,floorZ:0}); selected=id; recompute(); };
 $('#addOpening').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.openings.push({a:a.id,b:b.id,width:0.6,zBot:0,zTop:1}); recompute(); };
 $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} scene.tubes.push({from:scene.chambers[0].id,to:scene.chambers[1].id,fromZ:scene.chambers[0].floorZ,toZ:scene.chambers[1].floorZ,diameter:0.3,open:true}); recompute(); };
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
-$('#applyJson').onclick=()=>{ try{ const o=JSON.parse($('#json').value); if(!o.chambers&&!o.ditches) throw new Error('needs a chambers array'); scene=normalizeScene(o); curT=0; recompute(); }catch(e){ showWarn('JSON: '+e.message); } };
+$('#applyJson').onclick=()=>{ try{ const o=JSON.parse($('#json').value); if(!o.chambers&&!o.ditches) throw new Error('needs a chambers array'); scene=normalizeScene(o); curT=0; selected=null; recompute(); }catch(e){ showWarn('JSON: '+e.message); } };
 $('#copyJson').onclick=()=>navigator.clipboard?.writeText($('#json').value);
 $('#scrub').oninput=()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); };
 $('#play').onclick=()=>{ if(!result)return; if(curT>=result.totals.horizon) curT=0; playing=!playing; $('#play').textContent=playing?'⏸ Pause':'▶ Play'; lastTS=performance.now(); };
