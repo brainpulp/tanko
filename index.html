@@ -1016,7 +1016,7 @@ function buildMeshes(){
     const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2}; f.at=at;
     const top=c.rimZ+hsz*3;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),top,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:f.open!==false?0x3aa0ff:0x4a5663}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,16),new THREE.MeshStandardMaterial({color:f.open!==false?0x3aa0ff:0x4a5663,roughness:0.32,metalness:0.0,emissive:f.open!==false?0x0c2a48:0x14191e,emissiveIntensity:0.5}));
     arr.position.copy(p); arr.rotation.x=Math.PI; arr.userData={kind:'io_move',inflow:i,chamber:f.to}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,hsz*2.2,0)),f.open!==false,{valveInflow:i}); three.scene.add(valve.obj); ioObjs.push(valve);
@@ -1028,7 +1028,7 @@ function buildMeshes(){
     const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}; d.at=at;
     const z=d.z??c.floorZ;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),z,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:d.open!==false?0xf85149:0x4a5663}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,16),new THREE.MeshStandardMaterial({color:d.open!==false?0xf85149:0x4a5663,roughness:0.32,metalness:0.0,emissive:d.open!==false?0x401214:0x14191e,emissiveIntensity:0.5}));
     arr.position.copy(p); arr.userData={kind:'drain_move',drain:i,chamber:d.from}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,-hsz*2.2,0)),d.open!==false,{valveDrain:i}); three.scene.add(valve.obj); ioObjs.push(valve);
@@ -1042,12 +1042,17 @@ function buildMeshes(){
   buildTracers(byId);
   updateHandleVis(camMode);
 }
-// animated flow tracers — moving dots along every flow path (tube/opening/spill/inflow/drain)
+// animated flow tracers — thin streaks (short polylines) that travel along every
+// flow path (tube/opening/spill/inflow/drain). Lines render 1px wide at any zoom,
+// so they never balloon the way the old world-sized dots did.
+const STREAK_SEG=6;     // points per streak (segments + 1)
+const STREAK_LEN=0.16;  // streak length as a fraction of the whole path
 function buildTracers(byId){
   const mk=(pts,info)=>{ const N=Math.max(2,Math.min(7,Math.round(pathLen(pts)/(hsz*7))||3)); const markers=[];
-    for(let k=0;k<N;k++){ const m=new THREE.Mesh(new THREE.SphereGeometry(hsz*0.85,8,6),
-        new THREE.MeshBasicMaterial({color:0x8fe9ff,transparent:true,opacity:0.95,depthTest:false}));
-      m.renderOrder=14; m.visible=false; flowGroup.add(m); markers.push(m); }
+    for(let k=0;k<N;k++){ const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((STREAK_SEG+1)*3),3));
+      const m=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x8fe9ff,transparent:true,opacity:0.85,depthTest:false}));
+      m.renderOrder=14; m.frustumCulled=false; m.visible=false; flowGroup.add(m); markers.push(m); }
     tracers.push(Object.assign({pts,markers},info)); };
   result.conns.forEach((c,ci)=>{
     const A=byId.get(result.chambers[c.i].id), B=byId.get(result.chambers[c.j].id); if(!A||!B) return;
@@ -1072,7 +1077,15 @@ function animateFlow(ts){
     else { const f=tr.ci>=0?(fr.connFlow[tr.ci]||0):0; active=Math.abs(f)>1e-9; dir=f>=0?1:-1; }
     const N=tr.markers.length;
     for(let k=0;k<N;k++){ const m=tr.markers[k]; if(!active){ m.visible=false; continue; }
-      m.visible=true; let u=((ts*0.0003)+(k/N))%1; if(dir<0) u=1-u; m.position.copy(pointAlong(tr.pts,u)); }
+      m.visible=true;
+      const phase=((ts*0.00035)+(k/N))%1;
+      const head=dir>=0?phase:1-phase;            // leading point; moves with flow direction
+      const arr=m.geometry.attributes.position.array;
+      for(let s=0;s<=STREAK_SEG;s++){ const frac=s/STREAK_SEG;   // 0 = tail, 1 = head
+        const uu=clamp(head-dir*STREAK_LEN*(1-frac),0,1);        // tail trails behind the head
+        const p=pointAlong(tr.pts,uu); arr[s*3]=p.x; arr[s*3+1]=p.y; arr[s*3+2]=p.z; }
+      m.geometry.attributes.position.needsUpdate=true;
+    }
   }
 }
 
@@ -1091,7 +1104,7 @@ function addHandleAt(kind,shape,data,pos,color,rot){
   else if(shape==='box') geo=new THREE.BoxGeometry(hsz*2,hsz*2,hsz*2);
   else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.6,hsz*0.7,hsz*0.7);
   else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
-  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
+  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color,roughness:0.32,metalness:0.0,emissive:color,emissiveIntensity:0.10,depthTest:false,transparent:true,opacity:0.97}));
   m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
   m.userData=Object.assign({kind,scaleAxes:'all'},data); handleGroup.add(m); handles.push(m);
   return m;
@@ -1099,7 +1112,7 @@ function addHandleAt(kind,shape,data,pos,color,rot){
 function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
   const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
-  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
+  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x8b98a8,roughness:0.45,metalness:0.0,emissive:0x141a22,emissiveIntensity:0.5,depthTest:false,transparent:true,opacity:0.92}));
   m.position.set(x,y,z); m.renderOrder=11;
   // scale only the thin cross-section on screen; the long axis spans the wall edge
   m.userData={kind:'wall',chamber:d.id,side,scaleAxes:horiz?'xy':'yz'};
@@ -1109,7 +1122,7 @@ function addWall(d,side,x,y,z){
 function addBarHandle(kind,data,p0,p1,color){
   const dir=new THREE.Vector3().subVectors(p1,p0); const len=Math.max(dir.length(),0.06);
   const m=new THREE.Mesh(new THREE.BoxGeometry(hsz*0.85,len,hsz*0.85),
-    new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.95}));
+    new THREE.MeshStandardMaterial({color,roughness:0.32,metalness:0.0,emissive:color,emissiveIntensity:0.10,depthTest:false,transparent:true,opacity:0.96}));
   m.position.copy(p0.clone().add(p1).multiplyScalar(0.5));
   if(len>1e-4) m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
   m.renderOrder=11;
