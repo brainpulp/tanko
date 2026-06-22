@@ -1093,14 +1093,16 @@ function addHandleAt(kind,shape,data,pos,color,rot){
   else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
   m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
-  m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
+  m.userData=Object.assign({kind,scaleAxes:'all'},data); handleGroup.add(m); handles.push(m);
   return m;
 }
 function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
   const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
-  m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
+  m.position.set(x,y,z); m.renderOrder=11;
+  // scale only the thin cross-section on screen; the long axis spans the wall edge
+  m.userData={kind:'wall',chamber:d.id,side,scaleAxes:horiz?'xy':'yz'};
   handleGroup.add(m); handles.push(m);
 }
 // long thin bar handle spanning an edge from p0→p1 (like the wall-shift bars)
@@ -1110,7 +1112,9 @@ function addBarHandle(kind,data,p0,p1,color){
     new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.95}));
   m.position.copy(p0.clone().add(p1).multiplyScalar(0.5));
   if(len>1e-4) m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
-  m.renderOrder=11; m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
+  m.renderOrder=11;
+  // bar geometry is long on local Y; keep that, scale only the thin x/z cross-section
+  m.userData=Object.assign({kind,scaleAxes:'xz'},data); handleGroup.add(m); handles.push(m);
   return m;
 }
 
@@ -1209,7 +1213,7 @@ function drawLabel(spr,l1,l2){
   const {cv,ctx,texture,color}=spr.userData;
   const hex='#'+((color>>>0)&0xffffff).toString(16).padStart(6,'0');
   ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='rgba(13,17,23,0.92)'; rr(ctx,2,2,252,60,8); ctx.fill();
+  ctx.fillStyle='rgba(13,17,23,0.62)'; rr(ctx,2,2,252,60,8); ctx.fill();
   ctx.fillStyle=hex; rr(ctx,4,6,7,52,3); ctx.fill();               // color accent bar
   ctx.fillStyle=hex; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
   ctx.fillText(l1,20,l2?20:32);
@@ -1217,12 +1221,26 @@ function drawLabel(spr,l1,l2){
   texture.needsUpdate=true;
 }
 function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+// keep manipulator gizmos a constant on-screen size regardless of orthographic zoom,
+// so they stay grabbable when zoomed in (huge in world units) or out (specks).
+function updateHandleScale(){
+  if(!hsz) return;
+  const hpx=canvas.clientHeight||1;
+  const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
+  const k=clamp(11*worldPerPx/hsz, 0.15, 40);   // gizmo base unit ≈ 11px on screen
+  for(const h of handles){
+    const ax=h.userData.scaleAxes||'all';
+    if(ax==='all') h.scale.setScalar(k);
+    else h.scale.set(ax.includes('x')?k:1, ax.includes('y')?k:1, ax.includes('z')?k:1);
+  }
+  for(const o of ioObjs){ if(o.obj) o.obj.scale.setScalar(k); }   // valves & io arrows
+}
 // keep chamber labels a constant on-screen size, and push overlapping ones apart
 // vertically in screen space each frame so parallel chambers never collide.
 function updateLabelScale(){
   const hpx=canvas.clientHeight||1, wpx=canvas.clientWidth||1;
   const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
-  const H=42*worldPerPx;            // ~42px-tall label box (canvas is 256x64 → 4:1)
+  const H=26*worldPerPx;            // ~26px-tall label box (canvas is 256x64 → 4:1)
   const up=camera.up.clone().normalize();
   const items=[];
   for(const id in labelSprites){ const s=labelSprites[id]; if(!s) continue;
@@ -1233,7 +1251,7 @@ function updateLabelScale(){
     items.push({s, sx:(v.x+1)/2*wpx, sy:(1-v.y)/2*hpx});
   }
   items.sort((a,b)=>a.sy-b.sy);
-  const gapY=46, nearX=150;
+  const gapY=29, nearX=110;
   for(let k=1;k<items.length;k++){ const a=items[k-1], b=items[k];
     if(Math.abs(b.sx-a.sx)<nearX && b.sy-a.sy<gapY){
       const push=gapY-(b.sy-a.sy);                  // move b further down-screen (−up)
@@ -1620,6 +1638,7 @@ function loop(ts){
   animateFlow(ts);
   controls.update();
   updateLabelScale();
+  updateHandleScale();
   renderer.render(three.scene,camera);
 }
 
