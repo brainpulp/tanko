@@ -1028,16 +1028,12 @@ function buildMeshes(){
 
     // chamber handles
     const cx=d.x+d.length/2, cz=d.y+d.width/2;
-    // rim: four elongated bars along the four rim edges (all linked → all move together)
-    // bars along X: cross-section in YZ → scale 'yz'; bars along Z: cross-section in XY → scale 'xy'
-    addBarHandle('rim',{chamber:d.id,scaleAxes:'yz'},
-      new THREE.Vector3(d.x,d.rimZ,d.y), new THREE.Vector3(d.x+d.length,d.rimZ,d.y), 0x4aa3ff);
-    addBarHandle('rim',{chamber:d.id,scaleAxes:'yz'},
-      new THREE.Vector3(d.x,d.rimZ,d.y+d.width), new THREE.Vector3(d.x+d.length,d.rimZ,d.y+d.width), 0x4aa3ff);
-    addBarHandle('rim',{chamber:d.id,scaleAxes:'xy'},
-      new THREE.Vector3(d.x,d.rimZ,d.y), new THREE.Vector3(d.x,d.rimZ,d.y+d.width), 0x4aa3ff);
-    addBarHandle('rim',{chamber:d.id,scaleAxes:'xy'},
-      new THREE.Vector3(d.x+d.length,d.rimZ,d.y), new THREE.Vector3(d.x+d.length,d.rimZ,d.y+d.width), 0x4aa3ff);
+    // rim: four short bars at each edge midpoint (all linked → move together)
+    // front/back edges run along X (bar long axis is X by default); left/right rotated 90° Y
+    addHandleAt('rim','bar',{chamber:d.id},new THREE.Vector3(cx,d.rimZ,d.y),0x4aa3ff);
+    addHandleAt('rim','bar',{chamber:d.id},new THREE.Vector3(cx,d.rimZ,d.y+d.width),0x4aa3ff);
+    addHandleAt('rim','bar',{chamber:d.id},new THREE.Vector3(d.x,d.rimZ,cz),0x4aa3ff,{y:Math.PI/2});
+    addHandleAt('rim','bar',{chamber:d.id},new THREE.Vector3(d.x+d.length,d.rimZ,cz),0x4aa3ff,{y:Math.PI/2});
     addHandle('floor','cone', d.id, cx, d.floorZ, cz, 0xd29922, Math.PI);
     addHandle('move','oct', d.id, cx, d.rimZ+hsz*2.2, cz, 0x3fb950);
     addHandle('size','box', d.id, d.x+d.length, d.rimZ, d.y+d.width, 0xa371f7);
@@ -1099,7 +1095,7 @@ function buildMeshes(){
     const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2}; f.at=at;
     const top=c.rimZ+hsz*3;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),top,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:f.open!==false?0x3aa0ff:0x4a5663}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.1,hsz*2.1,12),new THREE.MeshBasicMaterial({color:f.open!==false?0x3aa0ff:0x4a5663}));
     arr.position.copy(p); arr.rotation.x=Math.PI; arr.userData={kind:'io_move',inflow:i,chamber:f.to}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,hsz*2.2,0)),f.open!==false,{valveInflow:i}); three.scene.add(valve.obj); ioObjs.push(valve);
@@ -1111,7 +1107,7 @@ function buildMeshes(){
     const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}; d.at=at;
     const z=d.z??c.floorZ;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),z,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:d.open!==false?0xf85149:0x4a5663}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.1,hsz*2.1,12),new THREE.MeshBasicMaterial({color:d.open!==false?0xf85149:0x4a5663}));
     arr.position.copy(p); arr.userData={kind:'drain_move',drain:i,chamber:d.from}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,-hsz*2.2,0)),d.open!==false,{valveDrain:i}); three.scene.add(valve.obj); ioObjs.push(valve);
@@ -1152,20 +1148,22 @@ function buildMeshes(){
 function mkValve(pos,open,data){
   // solid disc/puck — reads as a valve wheel and stays distinct from the spherical
   // tube-end handles, while remaining easy to click (no center hole like a torus).
-  const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.25,hsz*1.25,hsz*0.7,16),new THREE.MeshLambertMaterial({color:open?0x3fb950:0xf85149,emissive:open?0x12401d:0x401214,depthTest:false}));
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.0,hsz*1.0,hsz*0.6,16),new THREE.MeshLambertMaterial({color:open?0x3fb950:0xf85149,emissive:open?0x12401d:0x401214,depthTest:false}));
   m.position.copy(pos); m.renderOrder=12; m.userData=data; handles.push(m);
   return {obj:m};
 }
 function addHandle(kind,shape,id,x,y,z,color,rot){ addHandleAt(kind,shape,{chamber:id},new THREE.Vector3(x,y,z),color,rot); }
 function addHandleAt(kind,shape,data,pos,color,rot){
   let geo;
-  if(shape==='cone') geo=new THREE.ConeGeometry(hsz*1.1,hsz*2.2,4);
-  else if(shape==='oct') geo=new THREE.OctahedronGeometry(hsz*1.2);
-  else if(shape==='box') geo=new THREE.BoxGeometry(hsz*2,hsz*2,hsz*2);
-  else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.6,hsz*0.7,hsz*0.7);
-  else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
+  if(shape==='cone') geo=new THREE.ConeGeometry(hsz*0.9,hsz*1.8,4);
+  else if(shape==='oct') geo=new THREE.OctahedronGeometry(hsz*1.0);
+  else if(shape==='box') geo=new THREE.BoxGeometry(hsz*1.7,hsz*1.7,hsz*1.7);
+  else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.2,hsz*0.6,hsz*0.6);
+  else geo=new THREE.SphereGeometry(hsz*0.9,12,10);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
-  m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
+  m.position.copy(pos);
+  if(rot){ if(typeof rot==='number') m.rotation.x=rot; else { if(rot.x) m.rotation.x=rot.x; if(rot.y) m.rotation.y=rot.y; } }
+  m.renderOrder=11;
   m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
   return m;
 }
