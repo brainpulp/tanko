@@ -156,6 +156,10 @@
       <div id="drainRows"></div>
       <p class="hint">Outlets to outside. Adjacent walls also spill automatically over the lower rim; exposed walls lose fluid to the wild.</p>
 
+      <h2>Pumps <button class="add tiny" id="addPump">+ add</button></h2>
+      <div id="pumpRows"></div>
+      <p class="hint">Transfer water between chambers at a fixed rate. Click +add then click the source chamber, then the target. Use a level mark to auto-stop/start.</p>
+
       <details id="jsonWrap">
         <summary>Raw JSON (source of truth)</summary>
         <textarea id="json" spellcheck="false"></textarea>
@@ -190,6 +194,7 @@
           <button class="sm" data-tool="tube">+Tube</button>
           <button class="sm" data-tool="inflow">+Inflow</button>
           <button class="sm" data-tool="drain">+Drain</button>
+          <button class="sm" data-tool="pump">+Pump</button>
           <button class="sm" data-tool="delete">Delete</button>
         </div>
         <div id="hud"></div>
@@ -211,7 +216,7 @@
           <span><i style="background:var(--bad)"></i>lost / overflow</span>
           <span style="margin-left:auto">speed
             <select id="speed" style="width:auto;display:inline-block">
-              <option value="60">60×</option><option value="300" selected>300×</option>
+              <option value="10">10×</option><option value="20">20×</option><option value="30">30×</option><option value="60">60×</option><option value="300" selected>300×</option>
               <option value="1800">1800×</option><option value="10000">10000×</option>
             </select>
           </span>
@@ -355,7 +360,17 @@ function simulate(scene, opts={}){
     sinks.push({kind:'drain', i, invert:dr.z ?? chambers[i].floorZ, area, open:dr.open!==false, ref:k});
   });
   // inflows
-  const inflows = (scene.inflows||[]).map((f,k)=>({i:need(f.to,`Inflow ${k}`), rate:(f.rate||0)*L_TO_M3, open:f.open!==false, ref:k}));
+  const inflows = (scene.inflows||[]).map((f,k)=>({
+    i:need(f.to,`Inflow ${k}`), rate:(f.rate||0)*L_TO_M3, open:f.open!==false, ref:k,
+    stopAt: f.stopAt ? {ci:need(f.stopAt.chamber,`Inflow ${k} stopAt`), level:f.stopAt.level} : null,
+  }));
+  // pumps — constant-rate drain from `from` + inflow to `to`
+  const pumps = (scene.pumps||[]).map((p,k)=>({
+    fi:need(p.from,`Pump ${k}`), ti:need(p.to,`Pump ${k}`),
+    rate:(p.rate||5)*L_TO_M3, open:p.open!==false, ref:k,
+    stopAbove: p.stopAbove!=null ? {ci:need(p.stopAbove.chamber,`Pump ${k}`), level:p.stopAbove.level} : null,
+    startBelow: p.startBelow!=null ? {ci:need(p.startBelow.chamber,`Pump ${k}`), level:p.startBelow.level} : null,
+  }));
 
   // outlet sill per chamber (lowest elevation at which it starts passing water onward)
   const passZ = chambers.map((d,i)=>{
@@ -423,6 +438,17 @@ function simulate(scene, opts={}){
       out[s.i]+=vol;
       apply.push({i:s.i, j:-1, vol, sink:s.kind});
     }
+    // pumps: constant-rate transfer, direction always from→to
+    for(const pm of pumps){
+      let on=pm.open;
+      if(on && pm.stopAbove) on = surf(pm.stopAbove.ci) < pm.stopAbove.level;
+      if(!on && pm.startBelow) on = surf(pm.startBelow.ci) < pm.startBelow.level;
+      if(!on) continue;
+      const vol = Math.min(pm.rate*dt, Math.max(0,v[pm.fi]));
+      if(vol <= 0) continue;
+      out[pm.fi]+=vol; inc[pm.ti]+=vol;
+      apply.push({i:pm.fi, j:pm.ti, vol, isPump:true});
+    }
     return {cFlow, apply, out, inc};
   }
 
@@ -457,7 +483,11 @@ function simulate(scene, opts={}){
   let settle=0, guard=0;
   while(guard++<maxSteps && totalIn>EPS){
     const prev=v.slice();
-    for(const f of inflows) if(f.open) v[f.i]+=f.rate*dt;
+    for(const f of inflows){
+      let on=f.open;
+      if(on && f.stopAt) on = surf(f.stopAt.ci) < f.stopAt.level;
+      if(on) v[f.i]+=f.rate*dt;
+    }
     const F=flows();
     // scale a chamber's outflow if it would go negative
     const scale=new Float64Array(n).fill(1);
@@ -601,7 +631,8 @@ function normalizeScene(o){
   o.openings = o.openings || [];
   o.tubes = o.tubes || [];
   o.drains = o.drains || [];
-  o.inflows = (o.inflows||[]).map(f=>({to:f.to, rate:f.rate, open:f.open!==false}));
+  o.pumps = o.pumps || [];
+  o.inflows = (o.inflows||[]).map(f=>({to:f.to, rate:f.rate, open:f.open!==false, stopAt:f.stopAt||null}));
   // migrate legacy conduits/links -> tubes (and OUT -> drains)
   const legacy = o.conduits || o.links;
   if(legacy){
@@ -767,6 +798,11 @@ function renderEditor(){
       <div class="fields" style="grid-template-columns:repeat(2,1fr)">
         ${sel('to',f.to,ids,el=>{f.to=el.value;recompute();})}
         ${field('L/s',f.rate,el=>{f.rate=num(el.value);recompute();})}
+      </div>
+      <div class="fields" style="grid-template-columns:repeat(3,1fr);margin-top:4px">
+        <label style="font-size:9.5px;color:var(--muted);text-transform:uppercase">stop if</label>
+        ${sel('ch',f.stopAt?f.stopAt.chamber:'—',['—',...ids],el=>{ const v=el.value; f.stopAt=v==='—'?null:{chamber:v,level:f.stopAt?.level??1}; recompute();})}
+        ${field('≥ level',f.stopAt?f.stopAt.level:1,el=>{ if(f.stopAt) f.stopAt.level=num(el.value); recompute();})}
       </div>`;
     card.querySelector('[data-del]').onclick=()=>{ scene.inflows.splice(i,1); recompute(); };
     card.querySelector('#'+vid).onclick=()=>{ f.open=f.open===false; recompute(); };
@@ -790,6 +826,29 @@ function renderEditor(){
     card.querySelector('#'+vid).onclick=()=>{ d.open=d.open===false; recompute(); };
     dr.appendChild(card);
   });
+
+  const pr=$('#pumpRows'); if(pr){ pr.innerHTML='';
+  if(!(scene.pumps||[]).length) pr.innerHTML='<div class="empty">none</div>';
+  (scene.pumps||[]).forEach((p,i)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    const vid='pv'+i;
+    card.innerHTML=`<div class="top"><b>${p.from} ⇒ ${p.to}</b>
+        <span class="valve ${p.open!==false?'open':'shut'}" id="${vid}">${p.open!==false?'on':'off'}</span>
+        <button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(3,1fr)">
+        ${sel('from',p.from,ids,el=>{p.from=el.value;recompute();})}
+        ${sel('to',p.to,ids,el=>{p.to=el.value;recompute();})}
+        ${field('L/s',p.rate??5,el=>{p.rate=num(el.value);recompute();})}
+      </div>
+      <div class="fields" style="grid-template-columns:repeat(3,1fr);margin-top:4px">
+        <label style="font-size:9.5px;color:var(--muted);text-transform:uppercase">stop above</label>
+        ${sel('ch',p.stopAbove?p.stopAbove.chamber:'—',['—',...ids],el=>{ const v=el.value; p.stopAbove=v==='—'?null:{chamber:v,level:p.stopAbove?.level??1}; recompute();})}
+        ${field('level',p.stopAbove?p.stopAbove.level:1,el=>{ if(p.stopAbove) p.stopAbove.level=num(el.value); recompute();})}
+      </div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.pumps.splice(i,1); recompute(); };
+    card.querySelector('#'+vid).onclick=()=>{ p.open=p.open===false; recompute(); };
+    pr.appendChild(card);
+  }); }
 }
 
 /* ============================================================
@@ -882,12 +941,21 @@ const grid=new THREE.GridHelper(80,80,0x6b86ad,0x44587a); grid.material.opacity=
 
 let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
 const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;
+controls.enableDamping=false;
+controls.panSpeed=1.8;
+// pivot orbit around the scene point under the cursor (middle or right mouse button)
+canvas.addEventListener('mousedown', e=>{
+  if(e.button!==1&&e.button!==2) return;
+  ray.setFromCamera(ndc(e),camera);
+  const hits=ray.intersectObjects([...pickChambers,...handles],true);
+  if(hits.length){ controls.target.copy(hits[0].point); }
+  else { const gp=groundHit(e); if(gp) controls.target.copy(gp); }
+},{capture:true});
 
 let world=new THREE.Group(); three.scene.add(world);
 let handleGroup=new THREE.Group(); three.scene.add(handleGroup);
-let flowGroup=new THREE.Group(); three.scene.add(flowGroup);   // animated flow tracers
-let tracers=[];
+let cascadeGroup=new THREE.Group(); three.scene.add(cascadeGroup);   // cascade/overflow visuals
+let cascadeMeshes=[];   // {mesh, ci} — updated each frame
 let waterMeshes={}, labelSprites={}, connObjs=[], ioObjs=[], handles=[], pickChambers=[];
 let bounds=null, hsz=0.15;
 let selected=null;            // selected chamber id — only its edit handles are shown
@@ -919,7 +987,7 @@ function computeBounds(){
 function buildMeshes(){
   connObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
   ioObjs.forEach(o=>o.obj&&three.scene.remove(o.obj));
-  world.clear(); handleGroup.clear(); flowGroup.clear(); tracers=[];
+  world.clear(); handleGroup.clear(); cascadeGroup.clear(); cascadeMeshes=[];
   waterMeshes={}; labelSprites={}; connObjs=[]; ioObjs=[]; handles=[]; pickChambers=[]; chamberEdges={};
   if(!result) return;
   computeBounds();
@@ -940,9 +1008,15 @@ function buildMeshes(){
     // pick proxy (invisible) for tool clicks & selection
     const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
     pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
-    const wgeo=new THREE.BoxGeometry(d.length*0.95,1,d.width*0.95);
-    const water=new THREE.Mesh(wgeo,new THREE.MeshBasicMaterial({color:0x3aa0ff,transparent:true,opacity:0.45}));
-    water.visible=false; g.add(water); waterMeshes[d.id]={mesh:water,d};
+    const wgeo=new THREE.BoxGeometry(d.length*0.99,1,d.width*0.99);
+    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x1a6fa8,roughness:0.15,metalness:0.05,transparent:true,opacity:0.72,depthWrite:false}));
+    // water surface plane — sits at the water level top, gives the realistic flat-mirror look
+    const surfGeo=new THREE.PlaneGeometry(d.length*0.99,d.width*0.99);
+    const surfMat=new THREE.MeshStandardMaterial({color:0x3da8e0,roughness:0.08,metalness:0.18,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false});
+    const wsurf=new THREE.Mesh(surfGeo,surfMat);
+    wsurf.rotation.x=-Math.PI/2;  // flat horizontal
+    water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
+    waterMeshes[d.id]={mesh:water,surf:wsurf,d};
     // label: color-matched, pinned just off the chamber's near end, with a leader line and per-index stagger
     const off=0.5+(ci%3)*0.45;
     const anchor=new THREE.Vector3(-d.length/2, d.rimZ, 0);
@@ -954,7 +1028,16 @@ function buildMeshes(){
 
     // chamber handles
     const cx=d.x+d.length/2, cz=d.y+d.width/2;
-    addHandle('rim','cone', d.id, cx, d.rimZ, cz, 0x4aa3ff, 0);
+    // rim: four elongated bars along the four rim edges (all linked → all move together)
+    // bars along X: cross-section in YZ → scale 'yz'; bars along Z: cross-section in XY → scale 'xy'
+    addBarHandle('rim',{chamber:d.id,scaleAxes:'yz'},
+      new THREE.Vector3(d.x,d.rimZ,d.y), new THREE.Vector3(d.x+d.length,d.rimZ,d.y), 0x4aa3ff);
+    addBarHandle('rim',{chamber:d.id,scaleAxes:'yz'},
+      new THREE.Vector3(d.x,d.rimZ,d.y+d.width), new THREE.Vector3(d.x+d.length,d.rimZ,d.y+d.width), 0x4aa3ff);
+    addBarHandle('rim',{chamber:d.id,scaleAxes:'xy'},
+      new THREE.Vector3(d.x,d.rimZ,d.y), new THREE.Vector3(d.x,d.rimZ,d.y+d.width), 0x4aa3ff);
+    addBarHandle('rim',{chamber:d.id,scaleAxes:'xy'},
+      new THREE.Vector3(d.x+d.length,d.rimZ,d.y), new THREE.Vector3(d.x+d.length,d.rimZ,d.y+d.width), 0x4aa3ff);
     addHandle('floor','cone', d.id, cx, d.floorZ, cz, 0xd29922, Math.PI);
     addHandle('move','oct', d.id, cx, d.rimZ+hsz*2.2, cz, 0x3fb950);
     addHandle('size','box', d.id, d.x+d.length, d.rimZ, d.y+d.width, 0xa371f7);
@@ -1016,7 +1099,7 @@ function buildMeshes(){
     const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2}; f.at=at;
     const top=c.rimZ+hsz*3;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),top,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,16),new THREE.MeshStandardMaterial({color:f.open!==false?0x3aa0ff:0x4a5663,roughness:0.32,metalness:0.0,emissive:f.open!==false?0x0c2a48:0x14191e,emissiveIntensity:0.5}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:f.open!==false?0x3aa0ff:0x4a5663}));
     arr.position.copy(p); arr.rotation.x=Math.PI; arr.userData={kind:'io_move',inflow:i,chamber:f.to}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,hsz*2.2,0)),f.open!==false,{valveInflow:i}); three.scene.add(valve.obj); ioObjs.push(valve);
@@ -1028,10 +1111,34 @@ function buildMeshes(){
     const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}; d.at=at;
     const z=d.z??c.floorZ;
     const p=new THREE.Vector3(clamp(at.x,c.x,c.x+c.length),z,clamp(at.y,c.y,c.y+c.width));
-    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,16),new THREE.MeshStandardMaterial({color:d.open!==false?0xf85149:0x4a5663,roughness:0.32,metalness:0.0,emissive:d.open!==false?0x401214:0x14191e,emissiveIntensity:0.5}));
+    const arr=new THREE.Mesh(new THREE.ConeGeometry(hsz*1.3,hsz*2.6,12),new THREE.MeshBasicMaterial({color:d.open!==false?0xf85149:0x4a5663}));
     arr.position.copy(p); arr.userData={kind:'drain_move',drain:i,chamber:d.from}; three.scene.add(arr); handles.push(arr);
     ioObjs.push({obj:arr});
     const valve=mkValve(p.clone().add(new THREE.Vector3(0,-hsz*2.2,0)),d.open!==false,{valveDrain:i}); three.scene.add(valve.obj); ioObjs.push(valve);
+  });
+
+  // pumps — visualized as a tube (like scene.tubes) with round port discs at each end
+  (scene.pumps||[]).forEach((p,i)=>{
+    const a=byId.get(p.from), b=byId.get(p.to); if(!a||!b) return;
+    if(!p.fromAt) p.fromAt=wallAttach(a,b);
+    if(!p.toAt)   p.toAt=wallAttach(b,a);
+    const fz=p.fromZ??a.floorZ, tz=p.toZ??b.floorZ;
+    const pts=[ new THREE.Vector3(p.fromAt.x,fz,p.fromAt.y), new THREE.Vector3(p.fromAt.x,fz-0.4,p.fromAt.y),
+                new THREE.Vector3(p.toAt.x,  fz-0.4,p.toAt.y), new THREE.Vector3(p.toAt.x,tz,p.toAt.y) ];
+    const col=p.open!==false?0xff6b35:0x4a5663;   // orange when running, grey when off
+    const g=drawPolyTube(pts,Math.max(0.03,0.12),col);
+    three.scene.add(g); connObjs.push({obj:g,kind:'pump',ref:i});
+    // port discs at each end
+    const mkPort=(pos,clr)=>{
+      const m=new THREE.Mesh(new THREE.CylinderGeometry(hsz*1.1,hsz*1.1,hsz*0.5,16),
+        new THREE.MeshStandardMaterial({color:clr,roughness:0.3,metalness:0.1,emissive:clr,emissiveIntensity:0.15,depthTest:false}));
+      m.position.copy(pos); m.renderOrder=12; three.scene.add(m); ioObjs.push({obj:m}); return m;
+    };
+    mkPort(new THREE.Vector3(p.fromAt.x,fz,p.fromAt.y), col);
+    mkPort(new THREE.Vector3(p.toAt.x,tz,p.toAt.y), col);
+    // valve at midpoint
+    const mid=new THREE.Vector3((p.fromAt.x+p.toAt.x)/2,(fz+tz)/2-0.4,(p.fromAt.y+p.toAt.y)/2);
+    const valve=mkValve(mid,p.open!==false,{valvePump:i}); three.scene.add(valve.obj); ioObjs.push(valve);
   });
 
   // ground-plane height marker (purely visual; draggable up/down, no sim effect)
@@ -1039,54 +1146,7 @@ function buildMeshes(){
   const gpos=new THREE.Vector3((bounds?bounds.minX:0)-1.2, gz, (bounds?bounds.minZ:0)-1.2);
   addHandleAt('ground','oct',{},gpos,0x6b86ad);
 
-  buildTracers(byId);
   updateHandleVis(camMode);
-}
-// animated flow tracers — thin streaks (short polylines) that travel along every
-// flow path (tube/opening/spill/inflow/drain). Lines render 1px wide at any zoom,
-// so they never balloon the way the old world-sized dots did.
-const STREAK_SEG=6;     // points per streak (segments + 1)
-const STREAK_LEN=0.16;  // streak length as a fraction of the whole path
-function buildTracers(byId){
-  const mk=(pts,info)=>{ const N=Math.max(2,Math.min(7,Math.round(pathLen(pts)/(hsz*7))||3)); const markers=[];
-    for(let k=0;k<N;k++){ const geo=new THREE.BufferGeometry();
-      geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((STREAK_SEG+1)*3),3));
-      const m=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x8fe9ff,transparent:true,opacity:0.85,depthTest:false}));
-      m.renderOrder=14; m.frustumCulled=false; m.visible=false; flowGroup.add(m); markers.push(m); }
-    tracers.push(Object.assign({pts,markers},info)); };
-  result.conns.forEach((c,ci)=>{
-    const A=byId.get(result.chambers[c.i].id), B=byId.get(result.chambers[c.j].id); if(!A||!B) return;
-    if(c.kind==='tube'){ const t=scene.tubes[c.ref]; if(!t) return; let pts=tubePath(t,A,B); if(A.id!==t.from) pts=pts.slice().reverse(); mk(pts,{ci}); }
-    else { const h=c.kind==='opening' ? (c.b+(isFinite(c.t)?c.t:c.b+0.4))/2 : c.b;
-      mk([new THREE.Vector3(A.x+A.length/2,h,A.y+A.width/2), new THREE.Vector3(B.x+B.length/2,h,B.y+B.width/2)], {ci}); }
-  });
-  (scene.inflows||[]).forEach(f=>{ if(f.open===false) return; const c=byId.get(f.to); if(!c) return;
-    const at=f.at||{x:c.x+c.length/2,y:c.y+c.width/2};
-    mk([new THREE.Vector3(at.x,c.floorZ+c.depth+0.5,at.y), new THREE.Vector3(at.x,c.floorZ+0.15,at.y)], {ci:-1,kind:'inflow'}); });
-  (scene.drains||[]).forEach(d=>{ if(d.open===false) return; const c=byId.get(d.from); if(!c) return;
-    const at=d.at||{x:c.x+c.length/2,y:c.y+c.width/2}, z=d.z??c.floorZ;
-    mk([new THREE.Vector3(at.x,z,at.y), new THREE.Vector3(at.x,z-0.7,at.y)], {ci:-1,kind:'drain',chamberId:d.from,floorZ:c.floorZ,A:c.A,invert:z}); });
-}
-function animateFlow(ts){
-  if(!result||!tracers.length) return;
-  const fr=frameAt(result.frames,curT);
-  for(const tr of tracers){
-    let active=false, dir=1;
-    if(tr.kind==='inflow') active=true;
-    else if(tr.kind==='drain'){ const surf=tr.floorZ+lerpVal(result.frames,tr.chamberId,curT)/tr.A; active=surf>tr.invert+1e-4; }
-    else { const f=tr.ci>=0?(fr.connFlow[tr.ci]||0):0; active=Math.abs(f)>1e-9; dir=f>=0?1:-1; }
-    const N=tr.markers.length;
-    for(let k=0;k<N;k++){ const m=tr.markers[k]; if(!active){ m.visible=false; continue; }
-      m.visible=true;
-      const phase=((ts*0.00035)+(k/N))%1;
-      const head=dir>=0?phase:1-phase;            // leading point; moves with flow direction
-      const arr=m.geometry.attributes.position.array;
-      for(let s=0;s<=STREAK_SEG;s++){ const frac=s/STREAK_SEG;   // 0 = tail, 1 = head
-        const uu=clamp(head-dir*STREAK_LEN*(1-frac),0,1);        // tail trails behind the head
-        const p=pointAlong(tr.pts,uu); arr[s*3]=p.x; arr[s*3+1]=p.y; arr[s*3+2]=p.z; }
-      m.geometry.attributes.position.needsUpdate=true;
-    }
-  }
 }
 
 function mkValve(pos,open,data){
@@ -1104,30 +1164,26 @@ function addHandleAt(kind,shape,data,pos,color,rot){
   else if(shape==='box') geo=new THREE.BoxGeometry(hsz*2,hsz*2,hsz*2);
   else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.6,hsz*0.7,hsz*0.7);
   else geo=new THREE.SphereGeometry(hsz*1.1,12,10);
-  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color,roughness:0.32,metalness:0.0,emissive:color,emissiveIntensity:0.10,depthTest:false,transparent:true,opacity:0.97}));
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
   m.position.copy(pos); if(rot) m.rotation.x=rot; m.renderOrder=11;
-  m.userData=Object.assign({kind,scaleAxes:'all'},data); handleGroup.add(m); handles.push(m);
+  m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
   return m;
 }
 function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
   const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
-  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x8b98a8,roughness:0.45,metalness:0.0,emissive:0x141a22,emissiveIntensity:0.5,depthTest:false,transparent:true,opacity:0.92}));
-  m.position.set(x,y,z); m.renderOrder=11;
-  // scale only the thin cross-section on screen; the long axis spans the wall edge
-  m.userData={kind:'wall',chamber:d.id,side,scaleAxes:horiz?'xy':'yz'};
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
+  m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
   handleGroup.add(m); handles.push(m);
 }
 // long thin bar handle spanning an edge from p0→p1 (like the wall-shift bars)
 function addBarHandle(kind,data,p0,p1,color){
   const dir=new THREE.Vector3().subVectors(p1,p0); const len=Math.max(dir.length(),0.06);
   const m=new THREE.Mesh(new THREE.BoxGeometry(hsz*0.85,len,hsz*0.85),
-    new THREE.MeshStandardMaterial({color,roughness:0.32,metalness:0.0,emissive:color,emissiveIntensity:0.10,depthTest:false,transparent:true,opacity:0.96}));
+    new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.95}));
   m.position.copy(p0.clone().add(p1).multiplyScalar(0.5));
   if(len>1e-4) m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
-  m.renderOrder=11;
-  // bar geometry is long on local Y; keep that, scale only the thin x/z cross-section
-  m.userData=Object.assign({kind,scaleAxes:'xz'},data); handleGroup.add(m); handles.push(m);
+  m.renderOrder=11; m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
   return m;
 }
 
@@ -1226,7 +1282,7 @@ function drawLabel(spr,l1,l2){
   const {cv,ctx,texture,color}=spr.userData;
   const hex='#'+((color>>>0)&0xffffff).toString(16).padStart(6,'0');
   ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='rgba(13,17,23,0.62)'; rr(ctx,2,2,252,60,8); ctx.fill();
+  ctx.fillStyle='rgba(13,17,23,0.92)'; rr(ctx,2,2,252,60,8); ctx.fill();
   ctx.fillStyle=hex; rr(ctx,4,6,7,52,3); ctx.fill();               // color accent bar
   ctx.fillStyle=hex; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
   ctx.fillText(l1,20,l2?20:32);
@@ -1234,26 +1290,12 @@ function drawLabel(spr,l1,l2){
   texture.needsUpdate=true;
 }
 function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
-// keep manipulator gizmos a constant on-screen size regardless of orthographic zoom,
-// so they stay grabbable when zoomed in (huge in world units) or out (specks).
-function updateHandleScale(){
-  if(!hsz) return;
-  const hpx=canvas.clientHeight||1;
-  const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
-  const k=clamp(11*worldPerPx/hsz, 0.15, 40);   // gizmo base unit ≈ 11px on screen
-  for(const h of handles){
-    const ax=h.userData.scaleAxes||'all';
-    if(ax==='all') h.scale.setScalar(k);
-    else h.scale.set(ax.includes('x')?k:1, ax.includes('y')?k:1, ax.includes('z')?k:1);
-  }
-  for(const o of ioObjs){ if(o.obj) o.obj.scale.setScalar(k); }   // valves & io arrows
-}
 // keep chamber labels a constant on-screen size, and push overlapping ones apart
 // vertically in screen space each frame so parallel chambers never collide.
 function updateLabelScale(){
   const hpx=canvas.clientHeight||1, wpx=canvas.clientWidth||1;
   const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
-  const H=26*worldPerPx;            // ~26px-tall label box (canvas is 256x64 → 4:1)
+  const H=42*worldPerPx;            // ~42px-tall label box (canvas is 256x64 → 4:1)
   const up=camera.up.clone().normalize();
   const items=[];
   for(const id in labelSprites){ const s=labelSprites[id]; if(!s) continue;
@@ -1264,7 +1306,7 @@ function updateLabelScale(){
     items.push({s, sx:(v.x+1)/2*wpx, sy:(1-v.y)/2*hpx});
   }
   items.sort((a,b)=>a.sy-b.sy);
-  const gapY=29, nearX=110;
+  const gapY=46, nearX=150;
   for(let k=1;k<items.length;k++){ const a=items[k-1], b=items[k];
     if(Math.abs(b.sx-a.sx)<nearX && b.sy-a.sy<gapY){
       const push=gapY-(b.sy-a.sy);                  // move b further down-screen (−up)
@@ -1306,7 +1348,7 @@ function updateHandleVis(mode){
   }
   updateSelectionHighlight();
   $('#handlehint').innerHTML = tool!=='select'
-    ? `<b>${tool}</b> mode — ` + ({chamber:'click ground to place',opening:'click two adjacent chambers',tube:'click two chambers',inflow:'click a chamber',drain:'click a chamber',delete:'click a chamber / tube / opening / inflow / drain'}[tool]||'')
+    ? `<b>${tool}</b> mode — ` + ({chamber:'click ground to place',opening:'click two adjacent chambers',tube:'click two chambers',pump:'click source chamber, then target',inflow:'click a chamber',drain:'click a chamber',delete:'click a chamber / tube / opening / inflow / drain / pump'}[tool]||'')
     : selected!=null
       ? `editing <b>${selected}</b> · <span class="dot" style="background:#4aa3ff"></span>rim <span class="dot" style="background:#d29922"></span>floor <span class="dot" style="background:#3fb950"></span>move <span class="dot" style="background:#a371f7"></span>size · grey bars = walls · click <span class="dot" style="background:#3fb950"></span>/<span class="dot" style="background:#f85149"></span> valves · click empty space to deselect`
       : `<b>click a chamber</b> to show its edit handles`;
@@ -1365,6 +1407,7 @@ canvas.addEventListener('pointerdown', e=>{
   if(u.valveTube!=null){ const t=scene.tubes[u.valveTube]; t.open=t.open===false; recompute(); return; }
   if(u.valveInflow!=null){ const f=scene.inflows[u.valveInflow]; f.open=f.open===false; recompute(); return; }
   if(u.valveDrain!=null){ const d=scene.drains[u.valveDrain]; d.open=d.open===false; recompute(); return; }
+  if(u.valvePump!=null){ const p=(scene.pumps||[])[u.valvePump]; if(p){p.open=p.open===false; recompute();} return; }
   controls.enabled=false; canvas.setPointerCapture?.(e.pointerId);
   let plane;
   // choose plane: vertical drags use a camera-facing vertical plane; planar drags use horizontal plane.
@@ -1415,7 +1458,7 @@ function handleInfo(u){
     ground:{k:'Ground plane',h:'drag ↕ (visual only — no effect on the sim)',c:0x6b86ad},
     io_move:{k:'Inflow',h:'drag to reposition',c:0x3aa0ff},
     drain_move:{k:'Drain',h:'drag ↕ to set height',c:0xf85149},
-  })[u.kind]||null;
+  })[u.kind]||(u.valvePump!=null?{k:'Pump valve',h:'click to start / stop',c:0xff6b35}:null);
 }
 function showTip(info,e){ const t=$('#tip'); if(!info){ t.style.display='none'; return; }
   const hex='#'+((info.c>>>0)&0xffffff).toString(16).padStart(6,'0');
@@ -1558,12 +1601,15 @@ function handleTool(e){
   const ch=chamberAt(e);
   if(tool==='inflow'){ if(!ch) return; scene.inflows.push({to:ch,rate:5,open:true}); setTool('select'); recompute(); return; }
   if(tool==='drain'){ if(!ch) return; const c=scene.chambers.find(x=>x.id===ch); scene.drains.push({from:ch,z:c.floorZ,diameter:0.2,open:true}); setTool('select'); recompute(); return; }
-  if(tool==='tube'||tool==='opening'){
+  if(tool==='tube'||tool==='opening'||tool==='pump'){
     if(!ch) return;
-    if(!pendingPick){ pendingPick=ch; $('#handlehint').innerHTML=`<b>${tool}</b>: now click the ${tool==='opening'?'adjacent ':''}second chamber (first = <b>${ch}</b>)`; return; }
+    if(!pendingPick){ pendingPick=ch; $('#handlehint').innerHTML=`<b>${tool}</b>: now click the ${tool==='opening'?'adjacent ':''}${tool==='pump'?'target ':''}second chamber (first = <b>${ch}</b>)`; return; }
     if(pendingPick===ch){ return; }
     if(tool==='tube'){ const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
       scene.tubes.push({from:pendingPick,to:ch,fromZ:a.floorZ,toZ:b.floorZ,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),diameter:0.3,open:true}); }
+    else if(tool==='pump'){ const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
+      if(!scene.pumps) scene.pumps=[];
+      scene.pumps.push({from:pendingPick,to:ch,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),rate:5,open:true}); }
     else { const a=scene.chambers.find(x=>x.id===pendingPick),b=scene.chambers.find(x=>x.id===ch);
       if(!sharedSegment(a,b)){ showWarn(`Opening needs a shared wall — ${pendingPick} and ${ch} are not adjacent. Use a tube.`); pendingPick=null; setTool('select'); return; }
       const lo=Math.max(a.floorZ,b.floorZ), hi=Math.min(a.floorZ+a.depth,b.floorZ+b.depth), span=Math.max(hi-lo,0.1);
@@ -1579,7 +1625,11 @@ function deleteAt(e,ch){
   const hit=ray.intersectObjects(objs,true)[0];   // recursive: tubes are grouped meshes
   if(hit){
     const co=connObjs.find(o=>o.obj===hit.object || (o.obj.children&&o.obj.children.includes(hit.object)));
-    if(co){ if(co.kind==='opening') scene.openings.splice(co.ref,1); else scene.tubes.splice(co.ref,1); setTool('select'); recompute(); return; }
+    if(co){
+      if(co.kind==='opening') scene.openings.splice(co.ref,1);
+      else if(co.kind==='pump') (scene.pumps||[]).splice(co.ref,1);
+      else scene.tubes.splice(co.ref,1);
+      setTool('select'); recompute(); return; }
     const u=hit.object.userData||{};
     const inf=(u.inflow!=null)?u.inflow:u.valveInflow;
     const dr=(u.drain!=null)?u.drain:u.valveDrain;
@@ -1593,6 +1643,7 @@ function deleteAt(e,ch){
     scene.tubes=scene.tubes.filter(t=>t.from!==ch&&t.to!==ch);
     scene.inflows=scene.inflows.filter(f=>f.to!==ch);
     scene.drains=scene.drains.filter(d=>d.from!==ch);
+    if(scene.pumps) scene.pumps=scene.pumps.filter(p=>p.from!==ch&&p.to!==ch);
     if(String(selected)===String(ch)) selected=null;
     setTool('select'); recompute();
   }
@@ -1612,17 +1663,57 @@ function updateScene(t){
   const hud=[];
   for(const d of result.chambers){
     const vol=lerpVal(result.frames,d.id,t), level=d.A?vol/d.A:0, wm=waterMeshes[d.id];
-    if(wm){ if(level>1e-4){ wm.mesh.visible=true; wm.mesh.scale.y=level; wm.mesh.position.y=d.floorZ+level/2; } else wm.mesh.visible=false; }
+    if(wm){
+      if(level>1e-4){
+        wm.mesh.visible=true; wm.mesh.scale.y=level; wm.mesh.position.y=d.floorZ+level/2;
+        if(wm.surf){ wm.surf.visible=true; wm.surf.position.y=d.floorZ+level; }
+      } else { wm.mesh.visible=false; if(wm.surf) wm.surf.visible=false; }
+    }
     const p=result.per.find(x=>x.id===d.id), pct=p&&p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0;
     drawLabel(labelSprites[d.id], d.id, `${vol.toFixed(1)}m³ ${pct}%`);
   }
   connObjs.forEach(o=>{
-    const ci = (o.kind==='opening') ? result.conns.findIndex(c=>c.kind==='opening'&&c.ref===o.ref)
-             : result.conns.findIndex(c=>c.kind==='tube'&&c.ref===o.ref);
-    const active = ci>=0 && Math.abs(fr.connFlow[ci]||0)>1e-9;
-    if(o.obj){ const op=active?0.85:0.45, col=active?(o.kind==='tube'?0xffd451:0x9ecbff):(o.kind==='tube'?0xe0b341:0x6f86a0);
+    let active=false;
+    if(o.kind==='pump'){
+      const p=(scene.pumps||[])[o.ref]; active=p&&p.open!==false;
+    } else {
+      const ci = (o.kind==='opening') ? result.conns.findIndex(c=>c.kind==='opening'&&c.ref===o.ref)
+               : result.conns.findIndex(c=>c.kind==='tube'&&c.ref===o.ref);
+      active = ci>=0 && Math.abs(fr.connFlow[ci]||0)>1e-9;
+    }
+    if(o.obj){
+      const op=active?0.85:(o.kind==='tube'||o.kind==='pump'?0.35:0.55);
+      const col=active?(o.kind==='tube'?0xffd451:o.kind==='pump'?0xff6b35:0x9ecbff)
+                      :(o.kind==='tube'?0xe0b341:o.kind==='pump'?0x4a5663:0x7ec4ff);
       o.obj.traverse(m=>{ if(!m.material) return; m.material.opacity=op; if(m.isMesh&&m.material.color) m.material.color.set(col); }); }
   });
+  // cascade visualization: show curtain lines at shared walls where water is actively spilling
+  cascadeGroup.clear(); cascadeMeshes=[];
+  if(result){
+    const byId=new Map(result.chambers.map(d=>[d.id,d]));
+    result.conns.forEach((c,ci)=>{
+      if(c.kind!=='spill') return;
+      const flow=Math.abs(fr.connFlow[ci]||0);
+      if(flow<1e-9) return;
+      const A=result.chambers[c.i], B=result.chambers[c.j];
+      const seg=sharedSegment(A,B); if(!seg) return;
+      // which chamber is higher (source of overflow)?
+      const srcZ=Math.max(A.rimZ,B.rimZ);   // the crest height
+      const dstFloor=Math.min(A.floorZ,B.floorZ);
+      const alpha=Math.min(1, flow*50);      // stronger flow → more opaque curtain
+      const w=seg.hi-seg.lo, midH=(srcZ+dstFloor)/2, ht=Math.max(0.05,srcZ-dstFloor);
+      const geo=new THREE.PlaneGeometry(w,ht);
+      const mat=new THREE.MeshBasicMaterial({color:0x8fe9ff,transparent:true,opacity:alpha*0.55,side:THREE.DoubleSide,depthWrite:false});
+      const m=new THREE.Mesh(geo,mat);
+      if(seg.axis==='x'){
+        m.position.set(seg.at,midH,(seg.lo+seg.hi)/2);
+        m.rotation.y=Math.PI/2;
+      } else {
+        m.position.set((seg.lo+seg.hi)/2,midH,seg.at);
+      }
+      cascadeGroup.add(m);
+    });
+  }
   hud.push(`t = <b>${fmtTime(t)}</b>`);
   hud.push(`stored ${totalAt(result.frames,t).toFixed(2)} m³`);
   hud.push(`drained ${(fr.drained*1000).toFixed(1)} · lost ${(fr.lost*1000).toFixed(1)} L/s`);
@@ -1648,10 +1739,8 @@ function loop(ts){
     if(nt>=H) nt=H;   // reach steady state and hold — flow keeps cycling; only the user pauses
     setTime(nt);
   } else lastTS=ts;
-  animateFlow(ts);
   controls.update();
   updateLabelScale();
-  updateHandleScale();
   renderer.render(three.scene,camera);
 }
 
@@ -1668,6 +1757,7 @@ $('#addOpening').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two ch
 $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.tubes.push({from:a.id,to:b.id,fromZ:a.floorZ,toZ:b.floorZ,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),diameter:0.3,open:true}); recompute(); };
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
+$('#addPump').onclick=()=>{ setTool('pump'); };
 $('#applyJson').onclick=()=>{ try{ const o=JSON.parse($('#json').value); if(!o.chambers&&!o.ditches) throw new Error('needs a chambers array'); scene=normalizeScene(o); curT=0; selected=null; recompute(); }catch(e){ showWarn('JSON: '+e.message); } };
 $('#copyJson').onclick=()=>navigator.clipboard?.writeText($('#json').value);
 $('#scrub').oninput=()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); };
