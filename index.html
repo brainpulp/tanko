@@ -108,6 +108,12 @@
   code{font-family:var(--mono);background:#0b0f15;padding:1px 4px;border-radius:4px}
   .hint{color:var(--muted);font-size:10.5px;margin:4px 0 0}
   .empty{color:var(--muted);font-size:11px;padding:4px 0}
+  details.section{margin:0}
+  details.section>summary{list-style:none;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:16px 0 6px;font-weight:600;padding:0}
+  details.section>summary::-webkit-details-marker{display:none}
+  details.section>summary::before{content:'▶';font-size:7px;opacity:.45;flex-shrink:0;transition:transform .15s;line-height:1}
+  details.section[open]>summary::before{transform:rotate(90deg)}
+  details.section>summary .add{margin-left:auto}
 </style>
 <script type="importmap">
 { "imports": {
@@ -138,27 +144,39 @@
         <button class="sm" data-preset="tankditch">Tank+ditch</button>
       </div>
 
-      <h2>Chambers <button class="add tiny" id="addChamber">+ add</button></h2>
-      <div id="chamberRows"></div>
+      <details class="section" open>
+        <summary>Chambers <button class="add tiny" id="addChamber">+ add</button></summary>
+        <div id="chamberRows"></div>
+      </details>
 
-      <h2>Openings <button class="add tiny" id="addOpening">+ add</button></h2>
-      <div id="openingRows"></div>
-      <p class="hint">Holes in a shared wall. Drag bottom/top in side view, width in top view. Top above the wall crest → cascade; below → submerged window.</p>
+      <details class="section" open>
+        <summary>Openings <button class="add tiny" id="addOpening">+ add</button></summary>
+        <div id="openingRows"></div>
+        <p class="hint">Holes in a shared wall. Drag bottom/top in side view, width in top view. Top above the wall crest → cascade; below → submerged window.</p>
+      </details>
 
-      <h2>Tubes <button class="add tiny" id="addTube">+ add</button></h2>
-      <div id="tubeRows"></div>
-      <p class="hint">Pipes between any two chambers. Diameter sets flow; click the valve to open/close.</p>
+      <details class="section" open>
+        <summary>Tubes <button class="add tiny" id="addTube">+ add</button></summary>
+        <div id="tubeRows"></div>
+        <p class="hint">Pipes between any two chambers. Diameter sets flow; click the valve to open/close.</p>
+      </details>
 
-      <h2>Inflows <button class="add tiny" id="addInflow">+ add</button></h2>
-      <div id="inflowRows"></div>
+      <details class="section" open>
+        <summary>Inflows <button class="add tiny" id="addInflow">+ add</button></summary>
+        <div id="inflowRows"></div>
+      </details>
 
-      <h2>Drains <button class="add tiny" id="addDrain">+ add</button></h2>
-      <div id="drainRows"></div>
-      <p class="hint">Outlets to outside. Adjacent walls also spill automatically over the lower rim; exposed walls lose fluid to the wild.</p>
+      <details class="section" open>
+        <summary>Drains <button class="add tiny" id="addDrain">+ add</button></summary>
+        <div id="drainRows"></div>
+        <p class="hint">Outlets to outside. Adjacent walls also spill automatically over the lower rim; exposed walls lose fluid to the wild.</p>
+      </details>
 
-      <h2>Pumps <button class="add tiny" id="addPump">+ add</button></h2>
-      <div id="pumpRows"></div>
-      <p class="hint">Transfer water between chambers at a fixed rate. Click +add then click the source chamber, then the target. Use a level mark to auto-stop/start.</p>
+      <details class="section" open>
+        <summary>Pumps <button class="add tiny" id="addPump">+ add</button></summary>
+        <div id="pumpRows"></div>
+        <p class="hint">Transfer water between chambers at a fixed rate. Click +add then click the source chamber, then the target. Use a level mark to auto-stop/start.</p>
+      </details>
 
       <details id="jsonWrap">
         <summary>Raw JSON (source of truth)</summary>
@@ -1155,10 +1173,10 @@ function mkValve(pos,open,data){
 function addHandle(kind,shape,id,x,y,z,color,rot){ addHandleAt(kind,shape,{chamber:id},new THREE.Vector3(x,y,z),color,rot); }
 function addHandleAt(kind,shape,data,pos,color,rot){
   let geo;
-  if(shape==='cone') geo=new THREE.ConeGeometry(hsz*0.9,hsz*1.8,4);
+  if(shape==='cone') geo=new THREE.ConeGeometry(hsz*0.3,hsz*0.6,4);
   else if(shape==='oct') geo=new THREE.OctahedronGeometry(hsz*1.0);
-  else if(shape==='box') geo=new THREE.BoxGeometry(hsz*1.7,hsz*1.7,hsz*1.7);
-  else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.2,hsz*0.6,hsz*0.6);
+  else if(shape==='box') geo=new THREE.BoxGeometry(hsz*0.55,hsz*0.55,hsz*0.55);
+  else if(shape==='bar') geo=new THREE.BoxGeometry(hsz*2.2,hsz*0.3,hsz*0.3);
   else geo=new THREE.SphereGeometry(hsz*0.9,12,10);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.96}));
   m.position.copy(pos);
@@ -1169,7 +1187,7 @@ function addHandleAt(kind,shape,data,pos,color,rot){
 }
 function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
-  const geo=new THREE.BoxGeometry(horiz?hsz*0.7:d.length*0.5, hsz*0.7, horiz?d.width*0.5:hsz*0.7);
+  const geo=new THREE.BoxGeometry(horiz?hsz*0.4:d.length*0.5, hsz*0.4, horiz?d.width*0.5:hsz*0.4);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
   m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
   handleGroup.add(m); handles.push(m);
@@ -1756,6 +1774,9 @@ $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chamb
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
 $('#addPump').onclick=()=>{ setTool('pump'); };
+// prevent add buttons from toggling their collapsible section
+document.querySelectorAll('details.section > summary button').forEach(b =>
+  b.addEventListener('click', e => e.stopPropagation()));
 $('#applyJson').onclick=()=>{ try{ const o=JSON.parse($('#json').value); if(!o.chambers&&!o.ditches) throw new Error('needs a chambers array'); scene=normalizeScene(o); curT=0; selected=null; recompute(); }catch(e){ showWarn('JSON: '+e.message); } };
 $('#copyJson').onclick=()=>navigator.clipboard?.writeText($('#json').value);
 $('#scrub').oninput=()=>{ playing=false; $('#play').textContent='▶ Play'; setTime(+$('#scrub').value); };
