@@ -1061,13 +1061,15 @@ function buildMeshes(){
     const texN=makeLabelTex(d.name||d.id, col, false);
     const texF=makeLabelTex(d.name||d.id, col, true);
     const lmat=tex=>new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false});
-    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // +Z face, normal
+    // camera default is at (+X,+Y,+Z) so pB(+Z normal) and pR(+X normal) face camera → need texF
+    // pF(-Z normal) and pL(-X normal) face away → need texN (UV already correct from that side)
+    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // +Z face
     pB.position.set(0,cy2,d.width/2+0.01); g.add(pB);
-    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // -Z face, pre-flipped
+    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // -Z face
     pF.position.set(0,cy2,-d.width/2-0.01); pF.rotation.y=Math.PI; g.add(pF);
-    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // +X face, normal
+    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // +X face
     pR.position.set(d.length/2+0.01,cy2,0); pR.rotation.y=Math.PI/2; g.add(pR);
-    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // -X face, pre-flipped
+    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // -X face
     pL.position.set(-d.length/2-0.01,cy2,0); pL.rotation.y=-Math.PI/2; g.add(pL);
     world.add(g);
 
@@ -1522,10 +1524,14 @@ canvas.addEventListener('pointermove', e=>{
   else if(u.kind==='wall'){ dragWall(u,s,p,r3); }
   else if(u.kind==='op_bot'){ const o=scene.openings[u.opening];
     const A=scene.chambers.find(x=>x.id===o.a),B=scene.chambers.find(x=>x.id===o.b);
-    const loz=Math.max(A.floorZ,B.floorZ); o.zBot=r3(clamp(p.y,loz,(o.zTop??1)-0.05)); }
+    const loz=Math.max(A.floorZ,B.floorZ), rim=Math.min(A.floorZ+A.depth,B.floorZ+B.depth);
+    const effTop=clamp(o.zTop??rim, loz+0.05, rim);
+    o.zBot=r3(clamp(p.y,loz,effTop-0.05)); }
   else if(u.kind==='op_top'){ const o=scene.openings[u.opening];
     const A=scene.chambers.find(x=>x.id===o.a),B=scene.chambers.find(x=>x.id===o.b);
-    const rimMin=Math.min(A.floorZ+A.depth,B.floorZ+B.depth); o.zTop=r3(clamp(p.y,(o.zBot??0)+0.05,rimMin)); }
+    const rim=Math.min(A.floorZ+A.depth,B.floorZ+B.depth), loz=Math.max(A.floorZ,B.floorZ);
+    const effBot=clamp(o.zBot??loz, loz, rim-0.05);
+    o.zTop=r3(clamp(p.y,effBot+0.05,rim)); }
   else if(u.kind==='op_left'||u.kind==='op_right'){ const o=scene.openings[u.opening]; const seg=u.seg;
     const along=seg.axis==='x'?p.z:p.x; const w0=o.width??0.6, c0=(o.pos!=null)?o.pos:(seg.lo+seg.hi)/2;
     let left=c0-w0/2, right=c0+w0/2;
@@ -1554,11 +1560,11 @@ canvas.addEventListener('pointercancel',endDrag);
 canvas.addEventListener('pointerleave',()=>{ $('#tip').style.display='none'; });
 
 /* ---------- inline numeric editor (type-to-set, Enter/Tab commit, Tab→next field) ---------- */
-function fieldsForOpening(o){ return [
-  {label:'bottom', get:()=>o.zBot??0,  set:v=>o.zBot=v},
-  {label:'top',    get:()=>o.zTop??1,  set:v=>o.zTop=v},
-  {label:'width',  get:()=>o.width??0.6,set:v=>o.width=Math.max(0.05,v)},
-  {label:'pos',    get:()=>o.pos??0,   set:v=>o.pos=v},
+function fieldsForOpening(o, loz=0){ return [
+  {label:'bot↑floor', get:()=>(o.zBot??loz)-loz,     set:v=>{o.zBot=v+loz;}},
+  {label:'top↑floor', get:()=>(o.zTop??loz+1)-loz,   set:v=>{o.zTop=v+loz;}},
+  {label:'width',     get:()=>o.width??0.6,           set:v=>o.width=Math.max(0.05,v)},
+  {label:'pos',       get:()=>o.pos??0,               set:v=>o.pos=v},
 ]; }
 function buildEditor(u){
   if(u.chamber!=null && ['move','size','rim','floor','wall'].includes(u.kind)){
@@ -1577,7 +1583,9 @@ function buildEditor(u){
     return {targets, idx};
   }
   if(u.opening!=null){ const o=scene.openings[u.opening]; if(!o) return null;
-    return {targets:fieldsForOpening(o), idx: u.kind==='op_bot'?0 : u.kind==='op_top'?1 : 2}; }
+    const _oa=scene.chambers.find(x=>x.id===o.a), _ob=scene.chambers.find(x=>x.id===o.b);
+    const _loz=(_oa&&_ob)?Math.max(_oa.floorZ??0,_ob.floorZ??0):0;
+    return {targets:fieldsForOpening(o,_loz), idx: u.kind==='op_bot'?0 : u.kind==='op_top'?1 : 2}; }
   if(u.tube!=null){ const t=scene.tubes[u.tube]; if(!t) return null; const end=(u.end==='a');
     const c=scene.chambers.find(x=>x.id===(end?t.from:t.to));
     const aK=end?'fromAt':'toAt', zK=end?'fromZ':'toZ';
