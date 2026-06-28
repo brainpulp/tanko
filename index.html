@@ -178,6 +178,12 @@
         <p class="hint">Transfer water between chambers at a fixed rate. Click +add then click the source chamber, then the target. Use a level mark to auto-stop/start.</p>
       </details>
 
+      <details class="section" open>
+        <summary>Level Markers <button class="add tiny" id="addMarker">+ add</button></summary>
+        <div id="markerRows"></div>
+        <p class="hint">Horizontal marks on chamber walls. Drag the orange handle ↕ in 3D. Trigger device open/close when water crosses the mark.</p>
+      </details>
+
       <details id="jsonWrap">
         <summary>Raw JSON (source of truth)</summary>
         <textarea id="json" spellcheck="false"></textarea>
@@ -390,6 +396,26 @@ function simulate(scene, opts={}){
     startBelow: p.startBelow!=null ? {ci:need(p.startBelow.chamber,`Pump ${k}`), level:p.startBelow.level} : null,
   }));
 
+  // level markers — per-step device overrides
+  const markerDefs=(scene.markers||[]).map(mk=>{
+    const ci=I.get(mk.chamber); if(ci==null) return null;
+    return {ci, z:mk.z??0, trigger:mk.trigger||'above', actions:(mk.actions||[])};
+  }).filter(Boolean);
+  let _mInflow={}, _mDrain={}, _mPump={};
+  function computeMarkerOverrides(){
+    _mInflow={}; _mDrain={}; _mPump={};
+    for(const mk of markerDefs){
+      const level=surf(mk.ci);
+      const hit=mk.trigger==='above'?level>=mk.z:level<=mk.z;
+      if(!hit) continue;
+      for(const a of mk.actions){
+        if(a.type==='inflow') _mInflow[a.idx]=a.open;
+        else if(a.type==='drain') _mDrain[a.idx]=a.open;
+        else if(a.type==='pump') _mPump[a.idx]=a.open;
+      }
+    }
+  }
+
   // outlet sill per chamber (lowest elevation at which it starts passing water onward)
   const passZ = chambers.map((d,i)=>{
     let z=d.rimZ;
@@ -448,7 +474,8 @@ function simulate(scene, opts={}){
     // sinks (to wild / drains)
     for(const s of sinks){
       const z=surf(s.i); let Q;
-      if(s.kind==='drain') Q=orificeFlow(z,-Infinity,s.invert,s.area,s.open);
+      const effOpen=s.kind==='drain' && (s.ref in _mDrain) ? _mDrain[s.ref] : s.open;
+      if(s.kind==='drain') Q=orificeFlow(z,-Infinity,s.invert,s.area,effOpen);
       else Q=apertureFlow(z,-Infinity,s.b,s.t,s.w);
       if(Q<=0) continue;
       let vol=Math.min(Q*dt, chambers[s.i].A*(z-(s.kind==='drain'?s.invert:s.b)));
@@ -458,7 +485,7 @@ function simulate(scene, opts={}){
     }
     // pumps: constant-rate transfer, direction always from→to
     for(const pm of pumps){
-      let on=pm.open;
+      let on = (pm.ref in _mPump) ? _mPump[pm.ref] : pm.open;
       if(on && pm.stopAbove) on = surf(pm.stopAbove.ci) < pm.stopAbove.level;
       if(!on && pm.startBelow) on = surf(pm.startBelow.ci) < pm.startBelow.level;
       if(!on) continue;
@@ -501,8 +528,9 @@ function simulate(scene, opts={}){
   let settle=0, guard=0;
   while(guard++<maxSteps && totalIn>EPS){
     const prev=v.slice();
+    computeMarkerOverrides();
     for(const f of inflows){
-      let on=f.open;
+      let on = (f.ref in _mInflow) ? _mInflow[f.ref] : f.open;
       if(on && f.stopAt) on = surf(f.stopAt.ci) < f.stopAt.level;
       if(on) v[f.i]+=f.rate*dt;
     }
@@ -651,6 +679,7 @@ function normalizeScene(o){
   o.tubes = o.tubes || [];
   o.drains = o.drains || [];
   o.pumps = o.pumps || [];
+  o.markers = o.markers || [];
   o.inflows = (o.inflows||[]).map(f=>({to:f.to, rate:f.rate, open:f.open!==false, stopAt:f.stopAt||null}));
   // migrate legacy conduits/links -> tubes (and OUT -> drains)
   const legacy = o.conduits || o.links;
@@ -867,6 +896,38 @@ function renderEditor(){
     card.querySelector('[data-del]').onclick=()=>{ scene.pumps.splice(i,1); recompute(); };
     card.querySelector('#'+vid).onclick=()=>{ p.open=p.open===false; recompute(); };
     pr.appendChild(card);
+  }); }
+
+  const mr=$('#markerRows'); if(mr){ mr.innerHTML='';
+  if(!(scene.markers||[]).length) mr.innerHTML='<div class="empty">none</div>';
+  (scene.markers||[]).forEach((mk,mi)=>{
+    const card=document.createElement('div'); card.className='rowcard';
+    const actTypes=['inflow','drain','pump'];
+    const actHtml=(mk.actions||[]).map((a,ai)=>`
+      <div class="fields" style="grid-template-columns:auto auto 1fr auto auto;gap:4px;margin-top:3px;align-items:end" data-act="${ai}">
+        ${sel('type',a.type||'inflow',actTypes,el=>{a.type=el.value;recompute();})}
+        ${sel('idx',String(a.idx??0),(a.type==='drain'?(scene.drains):a.type==='pump'?(scene.pumps||[]):scene.inflows).map((_,j)=>String(j)),el=>{a.idx=parseInt(el.value);recompute();})}
+        ${sel('→',a.open!==false?'open':'shut',['open','shut'],el=>{a.open=el.value==='open';recompute();})}
+        <button class="tiny" data-actdel="${ai}">✕</button>
+      </div>`).join('');
+    card.innerHTML=`<div class="top">
+        <b style="color:#ff6b35">◆</b>
+        ${sel('ch',mk.chamber,ids,el=>{mk.chamber=el.value;recompute();})}
+        <button class="tiny" data-del>✕</button></div>
+      <div class="fields" style="grid-template-columns:repeat(3,1fr)">
+        ${field('z (m)',mk.z??0,el=>{mk.z=num(el.value);recompute();})}
+        ${sel('trigger',mk.trigger||'above',['above','below'],el=>{mk.trigger=el.value;recompute();})}
+        <label style="font-size:9.5px;color:var(--muted);text-transform:uppercase">actions<br>
+          <button class="tiny" data-addact style="margin-top:2px">+ action</button></label>
+      </div>
+      <div id="actList${mi}">${actHtml}</div>`;
+    card.querySelector('[data-del]').onclick=()=>{ scene.markers.splice(mi,1); recompute(); };
+    card.querySelector('[data-addact]').onclick=()=>{
+      if(!mk.actions) mk.actions=[];
+      mk.actions.push({type:'inflow',idx:0,open:false}); recompute(); };
+    card.querySelectorAll('[data-actdel]').forEach(b=>{
+      b.onclick=()=>{ const ai=parseInt(b.dataset.actdel); mk.actions.splice(ai,1); recompute(); }; });
+    mr.appendChild(card);
   }); }
 }
 
@@ -1172,6 +1233,24 @@ function buildMeshes(){
     const valve=mkValve(mid,p.open!==false,{valvePump:i}); three.scene.add(valve.obj); ioObjs.push(valve);
   });
 
+  // level markers — horizontal ring on chamber walls + drag handle
+  (scene.markers||[]).forEach((mk,mi)=>{
+    const c=byId.get(mk.chamber); if(!c) return;
+    const mz=mk.z??c.floorZ;
+    const col=0xff6b35;
+    const pts=[
+      new THREE.Vector3(c.x,mz,c.y), new THREE.Vector3(c.x+c.length,mz,c.y),
+      new THREE.Vector3(c.x+c.length,mz,c.y), new THREE.Vector3(c.x+c.length,mz,c.y+c.width),
+      new THREE.Vector3(c.x+c.length,mz,c.y+c.width), new THREE.Vector3(c.x,mz,c.y+c.width),
+      new THREE.Vector3(c.x,mz,c.y+c.width), new THREE.Vector3(c.x,mz,c.y),
+    ];
+    const line=new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:col,depthTest:false}));
+    line.renderOrder=10; three.scene.add(line); connObjs.push({obj:line,kind:'marker',ref:mi});
+    addHandleAt('marker','sphere',{marker:mi},new THREE.Vector3(c.x+c.length/2,mz,c.y),col);
+  });
+
   // ground-plane height marker (purely visual; draggable up/down, no sim effect)
   const gz=scene.groundZ||0; grid.position.y=gz;
   const gpos=new THREE.Vector3((bounds?bounds.minX:0)-1.2, gz, (bounds?bounds.minZ:0)-1.2);
@@ -1435,7 +1514,7 @@ canvas.addEventListener('pointerdown', e=>{
   // choose plane: vertical drags use a camera-facing vertical plane; planar drags use horizontal plane.
   // tube ends edit height in side views, plan attach elsewhere.
   const sideView=(camMode==='sideX'||camMode==='sideY');
-  const vKinds=['rim','floor','op_bot','op_top','ground'];
+  const vKinds=['rim','floor','op_bot','op_top','ground','marker'];
   const useVertical = vKinds.includes(u.kind) || ((u.kind==='tube_a'||u.kind==='tube_b') && sideView);
   if(useVertical){
     const nrm=new THREE.Vector3().subVectors(camera.position,h.position); nrm.y=0;
@@ -1456,6 +1535,7 @@ function stateFor(u){
   if(u.tube!=null) return scene.tubes[u.tube];
   if(u.inflow!=null) return scene.inflows[u.inflow];
   if(u.drain!=null) return scene.drains[u.drain];
+  if(u.marker!=null) return (scene.markers||[])[u.marker];
   return {};
 }
 
@@ -1480,6 +1560,7 @@ function handleInfo(u){
     ground:{k:'Ground plane',h:'drag ↕ (visual only — no effect on the sim)',c:0x6b86ad},
     io_move:{k:'Inflow',h:'drag to reposition',c:0x3aa0ff},
     drain_move:{k:'Drain',h:'drag ↕ to set height',c:0xf85149},
+    marker:{k:'Level marker',h:'drag ↕ to set trigger height',c:0xff6b35},
   })[u.kind]||(u.valvePump!=null?{k:'Pump valve',h:'click to start / stop',c:0xff6b35}:null);
 }
 function showTip(info,e){ const t=$('#tip'); if(!info){ t.style.display='none'; return; }
@@ -1539,6 +1620,7 @@ canvas.addEventListener('pointermove', e=>{
         if(end) t.fromAt=at; else t.toAt=at; } } }
   else if(u.kind==='io_move'){ const f=scene.inflows[u.inflow]; const c=scene.chambers.find(x=>x.id===f.to); f.at={x:r3(clamp(p.x,c.x,c.x+c.length)),y:r3(clamp(p.z,c.y,c.y+c.width))}; }
   else if(u.kind==='drain_move'){ const d=scene.drains[u.drain]; d.z=r3(p.y); }
+  else if(u.kind==='marker'){ const mk=(scene.markers||[])[u.marker]; if(mk){ const c=scene.chambers.find(x=>x.id===mk.chamber); mk.z=r3(c?clamp(p.y,c.floorZ,c.floorZ+c.depth):p.y); } }
   if(editor) showEditor(e.clientX,e.clientY,false);
   scheduleRecompute();
 });
@@ -1584,6 +1666,9 @@ function buildEditor(u){
     const side=(camMode==='sideX'||camMode==='sideY');
     return {targets:[fH,fX,fY], idx: side?0:1}; }
   if(u.kind==='ground') return {targets:[{label:'ground',get:()=>scene.groundZ||0,set:v=>scene.groundZ=v}], idx:0};
+  if(u.kind==='marker'){ const mk=(scene.markers||[])[u.marker]; if(!mk) return null;
+    const c=scene.chambers.find(x=>x.id===mk.chamber);
+    return {targets:[{label:'z (m)',get:()=>mk.z??0,set:v=>mk.z=c?clamp(v,c.floorZ,c.floorZ+c.depth):v}], idx:0}; }
   return null;
 }
 function showEditor(clientX,clientY,focus){
@@ -1656,6 +1741,7 @@ function deleteAt(e,ch){
     if(co){
       if(co.kind==='opening') scene.openings.splice(co.ref,1);
       else if(co.kind==='pump') (scene.pumps||[]).splice(co.ref,1);
+      else if(co.kind==='marker') (scene.markers||[]).splice(co.ref,1);
       else scene.tubes.splice(co.ref,1);
       setTool('select'); recompute(); return; }
     const u=hit.object.userData||{};
@@ -1664,6 +1750,7 @@ function deleteAt(e,ch){
     if(u.valveTube!=null){ scene.tubes.splice(u.valveTube,1); setTool('select'); recompute(); return; }
     if(inf!=null){ scene.inflows.splice(inf,1); setTool('select'); recompute(); return; }
     if(dr!=null){ scene.drains.splice(dr,1); setTool('select'); recompute(); return; }
+    if(u.marker!=null){ (scene.markers||[]).splice(u.marker,1); setTool('select'); recompute(); return; }
   }
   if(ch){
     scene.chambers=scene.chambers.filter(c=>c.id!==ch);
@@ -1672,6 +1759,7 @@ function deleteAt(e,ch){
     scene.inflows=scene.inflows.filter(f=>f.to!==ch);
     scene.drains=scene.drains.filter(d=>d.from!==ch);
     if(scene.pumps) scene.pumps=scene.pumps.filter(p=>p.from!==ch&&p.to!==ch);
+    if(scene.markers) scene.markers=scene.markers.filter(m=>m.chamber!==ch);
     if(String(selected)===String(ch)) selected=null;
     setTool('select'); recompute();
   }
@@ -1785,6 +1873,7 @@ $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chamb
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
 $('#addPump').onclick=()=>{ setTool('pump'); };
+$('#addMarker').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; if(!scene.markers)scene.markers=[]; scene.markers.push({chamber:c.id,z:c.floorZ+c.depth*0.5,trigger:'above',actions:[]}); recompute(); };
 // prevent add buttons from toggling their collapsible section
 document.querySelectorAll('details.section > summary button').forEach(b =>
   b.addEventListener('click', e => e.stopPropagation()));
