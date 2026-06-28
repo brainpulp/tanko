@@ -987,10 +987,7 @@ canvas.addEventListener('mousedown', e=>{
   if(hits.length) pt=hits[0].point;
   else { const gp=groundHit(e); if(gp) pt=gp; }
   if(pt){
-    const off=camera.position.clone().sub(controls.target);
     controls.target.copy(pt);
-    camera.position.copy(pt).add(off);
-    controls.update();
   }
 },{capture:true});
 
@@ -1059,17 +1056,18 @@ function buildMeshes(){
     wsurf.rotation.x=-Math.PI/2;  // flat horizontal
     water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
     waterMeshes[d.id]={mesh:water,surf:wsurf,d};
-    // label painted on each exterior wall face — whichever faces camera becomes visible
-    const labelTex=makeLabelTex(d.name||d.id, col);
-    const lmat=()=>new THREE.MeshBasicMaterial({map:labelTex,transparent:true,depthWrite:false});
-    const lw=d.length*0.7, lh2=d.depth*0.7, lz=d.width*0.7, cy2=d.floorZ+d.depth/2;
-    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lw,lh2),lmat()); // back (+Z face)
+    // label painted on each exterior wall face — square planes so text is never stretched
+    const lsz=Math.max(0.4, d.depth*0.7), cy2=d.floorZ+d.depth/2;
+    const texN=makeLabelTex(d.name||d.id, col, false);
+    const texF=makeLabelTex(d.name||d.id, col, true);
+    const lmat=tex=>new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false});
+    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // +Z face, normal
     pB.position.set(0,cy2,d.width/2+0.01); g.add(pB);
-    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lw,lh2),lmat()); // front (-Z face)
-    pF.position.set(0,cy2,-d.width/2-0.01); pF.rotation.y=Math.PI; pF.scale.x=-1; g.add(pF);
-    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lz,lh2),lmat()); // right (+X face)
-    pR.position.set(d.length/2+0.01,cy2,0); pR.rotation.y=Math.PI/2; pR.scale.x=-1; g.add(pR);
-    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lz,lh2),lmat()); // left (-X face)
+    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // -Z face, pre-flipped
+    pF.position.set(0,cy2,-d.width/2-0.01); pF.rotation.y=Math.PI; g.add(pF);
+    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // +X face, normal
+    pR.position.set(d.length/2+0.01,cy2,0); pR.rotation.y=Math.PI/2; g.add(pR);
+    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // -X face, pre-flipped
     pL.position.set(-d.length/2-0.01,cy2,0); pL.rotation.y=-Math.PI/2; g.add(pL);
     world.add(g);
 
@@ -1319,16 +1317,19 @@ function showSnapWall(c,at){
 
 
 // canvas texture painted on exterior chamber walls instead of floating sprites
-function makeLabelTex(text, color){
+function makeLabelTex(text, color, flip=false){
   const sz=256, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
   const ctx=cv.getContext('2d');
   const hex='#'+(color&0xffffff).toString(16).padStart(6,'0');
   ctx.clearRect(0,0,sz,sz);
+  if(flip){ ctx.save(); ctx.translate(sz,0); ctx.scale(-1,1); }
   ctx.globalAlpha=0.6;
   ctx.fillStyle=hex;
-  ctx.font=`bold ${text.length>2?70:110}px system-ui,sans-serif`;
+  const t=text.substring(0,6);
+  ctx.font=`bold ${t.length>4?55:(t.length>2?70:110)}px system-ui,sans-serif`;
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(text.substring(0,5),sz/2,sz/2);
+  ctx.fillText(t,sz/2,sz/2);
+  if(flip) ctx.restore();
   return new THREE.CanvasTexture(cv);
 }
 
