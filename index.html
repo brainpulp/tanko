@@ -18,7 +18,7 @@
   .col{height:100vh;overflow:auto;border-right:1px solid var(--line);flex-shrink:0;position:relative}
   .col:last-child{border-right:none;border-left:1px solid var(--line)}
   #center{flex:1;min-width:0;flex-shrink:1;overflow:hidden}
-  #left,#right{min-width:0;overflow:hidden}
+  #left,#right{min-width:0;overflow-x:hidden}
   .splitter{width:6px;background:var(--line);cursor:col-resize;flex-shrink:0;position:relative;z-index:10}
   .spltoggle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;cursor:pointer;user-select:none;color:var(--muted);line-height:1}
   .spltoggle:hover{color:var(--accent);border-color:var(--accent)}
@@ -790,8 +790,15 @@ function sel(label, value, opts, on){
   setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('change',()=>on(el)); },0);
   return `<label>${label}<select id="${id}">${opts.map(o=>`<option ${o===value?'selected':''}>${o}</option>`).join('')}</select></label>`;
 }
+function selNamed(label, value, opts, on){
+  const id='s'+Math.random().toString(36).slice(2,8);
+  setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('change',()=>on(el)); },0);
+  return `<label>${label}<select id="${id}">${opts.map(o=>`<option value="${o.v}" ${o.v===value?'selected':''}>${o.label}</option>`).join('')}</select></label>`;
+}
 function renderEditor(){
   const ids = scene.chambers.map(c=>c.id);
+  const namedIds = scene.chambers.map(c=>({v:c.id,label:c.name||c.id}));
+  const namedWithBlank = [{v:'—',label:'—'},...namedIds];
   const nameOf=id=>{ const c=scene.chambers.find(x=>x.id===id); return (c&&(c.name||c.id))||id; };
   const hexCol=n=>'#'+(n>>>0).toString(16).padStart(6,'0');
   const colInput=(val,onChange)=>{ const id='ci'+Math.random().toString(36).slice(2,6); setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',()=>onChange(parseInt(el.value.slice(1),16))); },0); return `<input type="color" id="${id}" value="${hexCol(val)}" style="width:26px;height:22px;padding:1px;border:1px solid var(--line);border-radius:4px;background:#0b0f15;cursor:pointer;vertical-align:middle">`; };
@@ -820,8 +827,8 @@ function renderEditor(){
     const card=document.createElement('div'); card.className='rowcard';
     card.innerHTML=`<div class="top"><b>${nameOf(o.a)} ⇄ ${nameOf(o.b)}</b><button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(5,1fr)">
-        ${sel('a',o.a,ids,el=>{o.a=el.value;recompute();})}
-        ${sel('b',o.b,ids,el=>{o.b=el.value;recompute();})}
+        ${selNamed('a',o.a,namedIds,el=>{o.a=el.value;recompute();})}
+        ${selNamed('b',o.b,namedIds,el=>{o.b=el.value;recompute();})}
         ${field('zBot',o.zBot??0,el=>{o.zBot=num(el.value);recompute();})}
         ${field('zTop',o.zTop??1,el=>{o.zTop=num(el.value);recompute();})}
         ${field('width',o.width??0.5,el=>{o.width=num(el.value);recompute();})}
@@ -839,8 +846,8 @@ function renderEditor(){
         <span class="valve ${t.open!==false?'open':'shut'}" id="${vid}">${t.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(5,1fr)">
-        ${sel('from',t.from,ids,el=>{t.from=el.value;recompute();})}
-        ${sel('to',t.to,ids,el=>{t.to=el.value;recompute();})}
+        ${selNamed('from',t.from,namedIds,el=>{t.from=el.value;recompute();})}
+        ${selNamed('to',t.to,namedIds,el=>{t.to=el.value;recompute();})}
         ${field('fromZ',t.fromZ??0,el=>{t.fromZ=num(el.value);recompute();})}
         ${field('toZ',t.toZ??0,el=>{t.toZ=num(el.value);recompute();})}
         ${field('Ø dia',t.diameter??0.3,el=>{t.diameter=num(el.value);recompute();})}
@@ -859,12 +866,12 @@ function renderEditor(){
         <span class="valve ${f.open!==false?'open':'shut'}" id="${vid}">${f.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(2,1fr)">
-        ${sel('to',f.to,ids,el=>{f.to=el.value;recompute();})}
+        ${selNamed('to',f.to,namedIds,el=>{f.to=el.value;recompute();})}
         ${field('L/s',f.rate,el=>{f.rate=num(el.value);recompute();})}
       </div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr);margin-top:4px">
         <label style="font-size:9.5px;color:var(--muted);text-transform:uppercase">stop if</label>
-        ${sel('ch',f.stopAt?f.stopAt.chamber:'—',['—',...ids],el=>{ const v=el.value; f.stopAt=v==='—'?null:{chamber:v,level:f.stopAt?.level??1}; recompute();})}
+        ${selNamed('ch',f.stopAt?f.stopAt.chamber:'—',namedWithBlank,el=>{ const v=el.value; f.stopAt=v==='—'?null:{chamber:v,level:f.stopAt?.level??1}; recompute();})}
         ${field('≥ level',f.stopAt?f.stopAt.level:1,el=>{ if(f.stopAt) f.stopAt.level=num(el.value); recompute();})}
       </div>`;
     card.querySelector('[data-del]').onclick=()=>{ scene.inflows.splice(i,1); recompute(); };
@@ -881,7 +888,7 @@ function renderEditor(){
         <span class="valve ${d.open!==false?'open':'shut'}" id="${vid}">${d.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
-        ${sel('from',d.from,ids,el=>{d.from=el.value;recompute();})}
+        ${selNamed('from',d.from,namedIds,el=>{d.from=el.value;recompute();})}
         ${field('z',d.z??0,el=>{d.z=num(el.value);recompute();})}
         ${field('Ø dia',d.diameter??0.2,el=>{d.diameter=num(el.value);recompute();})}
       </div>`;
@@ -899,13 +906,13 @@ function renderEditor(){
         <span class="valve ${p.open!==false?'open':'shut'}" id="${vid}">${p.open!==false?'on':'off'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
-        ${sel('from',p.from,ids,el=>{p.from=el.value;recompute();})}
-        ${sel('to',p.to,ids,el=>{p.to=el.value;recompute();})}
+        ${selNamed('from',p.from,namedIds,el=>{p.from=el.value;recompute();})}
+        ${selNamed('to',p.to,namedIds,el=>{p.to=el.value;recompute();})}
         ${field('L/s',p.rate??5,el=>{p.rate=num(el.value);recompute();})}
       </div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr);margin-top:4px">
         <label style="font-size:9.5px;color:var(--muted);text-transform:uppercase">stop above</label>
-        ${sel('ch',p.stopAbove?p.stopAbove.chamber:'—',['—',...ids],el=>{ const v=el.value; p.stopAbove=v==='—'?null:{chamber:v,level:p.stopAbove?.level??1}; recompute();})}
+        ${selNamed('ch',p.stopAbove?p.stopAbove.chamber:'—',namedWithBlank,el=>{ const v=el.value; p.stopAbove=v==='—'?null:{chamber:v,level:p.stopAbove?.level??1}; recompute();})}
         ${field('level',p.stopAbove?p.stopAbove.level:1,el=>{ if(p.stopAbove) p.stopAbove.level=num(el.value); recompute();})}
       </div>`;
     card.querySelector('[data-del]').onclick=()=>{ scene.pumps.splice(i,1); recompute(); };
@@ -928,7 +935,7 @@ function renderEditor(){
     card.innerHTML=`<div class="top">
         ${colInput(mk.color??0xff6b35,v=>{mk.color=v;recompute();})}
         <b style="color:#ff6b35">◆ ${nameOf(mk.chamber)}</b>
-        ${sel('ch',mk.chamber,ids,el=>{mk.chamber=el.value;recompute();})}
+        ${selNamed('ch',mk.chamber,namedIds,el=>{mk.chamber=el.value;recompute();})}
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
         ${field('z (m)',mk.z??0,el=>{mk.z=num(el.value);recompute();})}
