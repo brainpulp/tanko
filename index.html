@@ -64,6 +64,7 @@
   #cammenu{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:5}
   #tools{position:absolute;top:42px;left:10px;display:flex;gap:6px;z-index:5;flex-wrap:wrap;max-width:60%}
   #tools button{background:rgba(13,17,23,.82)}
+  #tools button.active{background:var(--accent);color:#04101f}
   #hud{position:absolute;top:10px;right:10px;z-index:5;background:rgba(13,17,23,.82);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;min-width:150px}
   #hud b{color:var(--accent)}
   #handlehint{position:absolute;bottom:10px;left:10px;z-index:5;background:rgba(13,17,23,.82);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:10.5px;color:var(--muted);max-width:54%;line-height:1.5}
@@ -141,13 +142,16 @@
         <button class="sm" id="projRename" title="Rename project">✎</button>
         <button class="sm" id="projDel" title="Delete project">🗑</button>
       </div>
-      <p class="sub" style="margin:-2px 0 6px">Projects saved on this device. <span style="opacity:.7">Presets load into the current project.</span></p>
-      <div class="scene-tabs">
-        <button class="sm" data-preset="worked">Worked</button>
-        <button class="sm" data-preset="cascade">Cascade</button>
-        <button class="sm" data-preset="pools">Pools</button>
-        <button class="sm" data-preset="adjacent">Adjacency</button>
-        <button class="sm" data-preset="tankditch">Tank+ditch</button>
+      <p class="sub" style="margin:-2px 0 6px">Projects saved on this device.</p>
+      <div class="projbar" style="margin-top:2px">
+        <select id="presetSel" style="flex:1;min-width:0;background:#0d1117;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px">
+          <option value="">— load preset —</option>
+          <option value="worked">Worked example</option>
+          <option value="cascade">Cascade</option>
+          <option value="pools">Pools</option>
+          <option value="adjacent">Adjacency</option>
+          <option value="tankditch">Tank + ditch</option>
+        </select>
       </div>
 
       <details class="section" open>
@@ -181,7 +185,7 @@
       <details class="section" open>
         <summary>Pumps <button class="add tiny" id="addPump">+ add</button></summary>
         <div id="pumpRows"></div>
-        <p class="hint">Transfer water between chambers at a fixed rate. Click +add then click the source chamber, then the target. Use a level mark to auto-stop/start.</p>
+        <p class="hint">Transfer water between chambers at a fixed rate. Click +add to create one between the first two chambers, then edit from/to in the card. Use a level marker to auto-stop/start.</p>
       </details>
 
       <details class="section" open>
@@ -795,7 +799,7 @@ function renderEditor(){
   const cr=$('#chamberRows'); cr.innerHTML='';
   scene.chambers.forEach((c,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
-    card.innerHTML=`<div class="top"><b>${c.id}</b>${colInput(c.color??PALETTE[i%PALETTE.length],v=>{c.color=v;recompute();})}<button class="tiny" data-del>✕</button></div>
+    card.innerHTML=`<div class="top"><b>${c.name||c.id}</b>${colInput(c.color??PALETTE[i%PALETTE.length],v=>{c.color=v;recompute();})}<button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(4,1fr)">
         ${field('name',c.name??'',el=>{c.name=el.value;recompute();},'style="text-align:left"')}
         ${field('x',c.x,el=>{c.x=num(el.value);recompute();})}
@@ -958,20 +962,23 @@ function renderResults(){
     <div class="kv"><span>Drained</span><b>${(t.drainedFinal*1000).toFixed(1)} L/s</b></div>
     <div class="kv"><span>Lost to wild</span><b>${(t.lostFinal*1000).toFixed(1)} L/s</b></div>`;
 
+  const nameMap=new Map(result.per.map(p=>[p.id, p.name||p.id]));
+  const chName=id=>nameMap.get(id)||id;
+
   const over=result.per.filter(p=>p.status==='overflow');
-  $('#warn').innerHTML=over.length?`<div class="warnbox">⚠ Losing to the wild: ${over.map(p=>p.id).join(', ')} — over rim with no outlet.</div>`:'';
+  $('#warn').innerHTML=over.length?`<div class="warnbox">⚠ Losing to the wild: ${over.map(p=>p.name||p.id).join(', ')} — over rim with no outlet.</div>`:'';
 
   const pc=$('#perChamber').querySelector('tbody'); pc.innerHTML='';
   result.per.forEach(p=>{
     const vol=result.frames.length?lerpVal(result.frames,p.id,curT):0;
     const pct=p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0;
-    pc.innerHTML+=`<tr><td><b>${p.id}</b></td><td><span class="pill s-${p.status}">${p.status}</span></td><td class="num">${pct}%</td><td class="num">${fmtTime(p.tSpill)}</td><td class="num">${fmtTime(p.tFull)}</td></tr>`;
+    pc.innerHTML+=`<tr><td><b>${p.name||p.id}</b></td><td><span class="pill s-${p.status}">${p.status}</span></td><td class="num">${pct}%</td><td class="num">${fmtTime(p.tSpill)}</td><td class="num">${fmtTime(p.tFull)}</td></tr>`;
   });
 
   const ev=$('#events'); ev.innerHTML='';
   if(!result.events.length) ev.innerHTML='<div class="empty">no events</div>';
   result.events.forEach(e=>{
-    ev.innerHTML+=`<div class="ev"><span class="t">${fmtTime(e.t)}</span><span class="d">${e.ch}</span><span><span class="pill s-${statusForEvent(e.event)}">${e.event}</span> <span class="x">${e.detail}</span></span></div>`;
+    ev.innerHTML+=`<div class="ev"><span class="t">${fmtTime(e.t)}</span><span class="d">${chName(e.ch)}</span><span><span class="pill s-${statusForEvent(e.event)}">${e.event}</span> <span class="x">${e.detail}</span></span></div>`;
   });
 
   const track=$('#track'); track.innerHTML='';
@@ -979,7 +986,7 @@ function renderResults(){
   result.events.forEach(e=>{
     const tk=document.createElement('div');
     tk.className='tick '+(e.event==='start'?'start':e.event==='overflow'?'overflow':'');
-    tk.style.left=(100*e.t/H)+'%'; tk.title=`${fmtTime(e.t)} — ${e.ch} ${e.event}`;
+    tk.style.left=(100*e.t/H)+'%'; tk.title=`${fmtTime(e.t)} — ${chName(e.ch)} ${e.event}`;
     track.appendChild(tk);
   });
   $('#scrub').max=String(Math.max(1,Math.round(H)));
@@ -997,7 +1004,7 @@ function renderCharts(){
   const hex=i=>'#'+PALETTE[i%PALETTE.length].toString(16).padStart(6,'0');
   const charts=[['fill %','fill'],['volume m³','vol'],['water height m','ht']];
   el.innerHTML=charts.map(([title,key])=>`<div class="chart"><div class="ctitle">${title}</div>`+
-    per.map((p,i)=>`<div class="cbar"><span class="cid" style="color:${hex(i)}">${p.id}</span>`+
+    per.map((p,i)=>`<div class="cbar"><span class="cid" title="${p.name||p.id}" style="color:${hex(i)}">${(p.name||p.id).substring(0,2)}</span>`+
       `<div class="ctrack"><div class="cfill" data-k="${key}" data-i="${i}" style="background:${hex(i)}"></div></div>`+
       `<span class="cval" data-vk="${key}" data-i="${i}"></span></div>`).join('')+`</div>`).join('');
   el.dataset.maxvol=maxVol; el.dataset.maxrim=maxRim; el.dataset.minfloor=minFloor;
@@ -1741,7 +1748,7 @@ function dragWall(u,s,p,r3){
 
 let pendingPick=null;
 function handleTool(e){
-  if(tool==='chamber'){ const g=groundHit(e); if(!g) return; const id=nextId(); scene.chambers.push({id,name:'',x:r3(g.x)-2,y:r3(g.z)-1.5,length:4,width:3,depth:1.5,floorZ:0}); selected=id; setTool('select'); recompute(); return; }
+  if(tool==='chamber'){ const g=groundHit(e); if(!g) return; const id=nextId(); const name='Chamber '+(scene.chambers.length+1); scene.chambers.push({id,name,x:r3(g.x)-2,y:r3(g.z)-1.5,length:4,width:3,depth:1.5,floorZ:0}); selected=id; setTool('select'); recompute(); return; }
   const ch=chamberAt(e);
   if(tool==='inflow'){ if(!ch) return; scene.inflows.push({to:ch,rate:5,open:true}); setTool('select'); recompute(); return; }
   if(tool==='drain'){ if(!ch) return; const c=scene.chambers.find(x=>x.id===ch); scene.drains.push({from:ch,z:c.floorZ,diameter:0.2,open:true}); setTool('select'); recompute(); return; }
@@ -1795,7 +1802,7 @@ function deleteAt(e,ch){
     setTool('select'); recompute();
   }
 }
-function nextId(){ const used=new Set(scene.chambers.map(c=>c.id)); for(let i=0;i<26;i++){ const id=String.fromCharCode(65+i); if(!used.has(id)) return id; } return 'C'+scene.chambers.length; }
+function nextId(){ const used=new Set(scene.chambers.map(c=>c.id)); let i=1; while(used.has('c'+i)) i++; return 'c'+i; }
 const r3=x=>Math.round(x*1000)/1000;
 
 function setTool(t){ tool=t; pendingPick=null; document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===t)); updateHandleVis(camMode); controls.enabled=true; }
@@ -1896,18 +1903,18 @@ function loop(ts){
 /* ---------- wiring ---------- */
 document.querySelectorAll('[data-cam]').forEach(b=>b.addEventListener('click',()=>applyCam(b.dataset.cam)));
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
-document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{ scene=normalizeScene(clone(PRESETS[b.dataset.preset])); curT=0; selected=null; recompute(); applyCam(camMode); }));
+$('#presetSel').onchange=e=>{ const v=e.target.value; if(v&&PRESETS[v]){ scene=normalizeScene(clone(PRESETS[v])); curT=0; selected=null; recompute(); applyCam(camMode); e.target.value=''; } };
 $('#projectSel').onchange=e=>switchProject(e.target.value);
 $('#projNew').onclick=newProject;
 $('#projRename').onclick=renameProject;
 $('#projDel').onclick=deleteProject;
-$('#addChamber').onclick=()=>{ const id=nextId(); const n=scene.chambers.length; scene.chambers.push({id,name:'',x:0,y:n*4,length:4,width:3,depth:1.5,floorZ:0}); selected=id; recompute(); };
+$('#addChamber').onclick=()=>{ const id=nextId(); const n=scene.chambers.length; scene.chambers.push({id,name:'Chamber '+(n+1),x:0,y:n*4,length:4,width:3,depth:1.5,floorZ:0}); selected=id; recompute(); };
 $('#addOpening').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.openings.push({a:a.id,b:b.id,width:0.6,zBot:0,zTop:1}); recompute(); };
 $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.tubes.push({from:a.id,to:b.id,fromZ:a.floorZ,toZ:b.floorZ,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),diameter:0.3,open:true}); recompute(); };
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
 $('#addPump').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const _pa=scene.chambers[0],_pb=scene.chambers[1]; if(!scene.pumps)scene.pumps=[]; scene.pumps.push({from:_pa.id,to:_pb.id,fromAt:wallAttach(_pa,_pb),toAt:wallAttach(_pb,_pa),rate:5,open:true}); recompute(); };
-$('#addMarker').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; if(!scene.markers)scene.markers=[]; scene.markers.push({chamber:c.id,z:c.floorZ+c.depth*0.5,trigger:'above',actions:[]}); recompute(); };
+$('#addMarker').onclick=()=>{ if(!scene.chambers.length){ showWarn('Add a chamber first'); return; } const c=scene.chambers[0]; if(!scene.markers)scene.markers=[]; scene.markers.push({chamber:c.id,z:c.floorZ+c.depth*0.5,trigger:'above',actions:[]}); recompute(); };
 // prevent add buttons from toggling their collapsible section
 document.querySelectorAll('details.section > summary button').forEach(b =>
   b.addEventListener('click', e => e.stopPropagation()));
