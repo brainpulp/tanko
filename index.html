@@ -614,13 +614,14 @@ const PRESETS = {
     tubes:[], drains:[{from:'B',z:0.4,diameter:0.6,open:true}],
     inflows:[{to:'A',rate:10,open:true}],
   },
-  // big tank with shallow rim gutters on three sides + a corner sump off one gutter.
+  // pool with rim-overflow ditches on all 4 sides feeding a corner sump
   tankditch: {
     chambers:[
-      {id:'T',name:'Tank',   x:0,   y:0,    length:15,  width:5,   depth:2.5,  floorZ:0},
+      {id:'T',name:'Pool',   x:0,   y:0,    length:15,  width:5,   depth:2.5,  floorZ:0},
       {id:'W',name:'Ditch W',x:-0.3,y:0,    length:0.3, width:5,   depth:0.15, floorZ:2.25},
       {id:'E',name:'Ditch E',x:15,  y:0,    length:0.3, width:5,   depth:0.15, floorZ:2.25},
       {id:'S',name:'Ditch S',x:0,   y:-0.3, length:15,  width:0.3, depth:0.15, floorZ:2.25},
+      {id:'N',name:'Ditch N',x:0,   y:5,    length:15,  width:0.3, depth:0.15, floorZ:2.25},
       {id:'K',name:'Sump',   x:0,   y:-1.8, length:1,   width:1.5, depth:1.5,  floorZ:0.9},
     ],
     openings:[], tubes:[], drains:[],
@@ -631,7 +632,7 @@ const PRESETS = {
 /* ============================================================
    STATE + MIGRATION
    ============================================================ */
-let scene = clone(PRESETS.worked);
+let scene = clone(PRESETS.tankditch);
 let result = null;
 let curT=0, playing=false, lastTS=0;
 let camMode='iso', tool='select';
@@ -977,19 +978,6 @@ renderer.domElement.addEventListener('wheel', e=>{
   controls.update(); updateHandleScales();
 },{passive:false});
 
-// pivot orbit/pan around the scene point under the cursor (middle or right mouse)
-// move camera by same offset so the view doesn't jump when target changes
-canvas.addEventListener('mousedown', e=>{
-  if(e.button!==1&&e.button!==2) return;
-  ray.setFromCamera(ndc(e),camera);
-  const hits=ray.intersectObjects([...pickChambers,...handles],true);
-  let pt=null;
-  if(hits.length) pt=hits[0].point;
-  else { const gp=groundHit(e); if(gp) pt=gp; }
-  if(pt){
-    controls.target.copy(pt);
-  }
-},{capture:true});
 
 let world=new THREE.Group(); three.scene.add(world);
 let handleGroup=new THREE.Group(); three.scene.add(handleGroup);
@@ -1039,8 +1027,8 @@ function buildMeshes(){
     const wall=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.7}));
     wall.position.y=d.floorZ+d.depth/2; g.add(wall);
     chamberEdges[d.id]={edge:wall,color:col};
-    // faint colored fill so the basin reads as a distinct volume
-    const fill=new THREE.Mesh(box.clone(),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.05,depthWrite:false}));
+    // colored fill so the basin reads as a distinct volume
+    const fill=new THREE.Mesh(box.clone(),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.13,depthWrite:false}));
     fill.position.y=d.floorZ+d.depth/2; g.add(fill);
     const floor=new THREE.Mesh(new THREE.BoxGeometry(d.length,0.01,d.width),new THREE.MeshBasicMaterial({color:0x1b2433}));
     floor.position.y=d.floorZ; g.add(floor);
@@ -1048,10 +1036,10 @@ function buildMeshes(){
     const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
     pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
     const wgeo=new THREE.BoxGeometry(d.length*0.99,1,d.width*0.99);
-    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x1a6fa8,roughness:0.15,metalness:0.05,transparent:true,opacity:0.72,depthWrite:false}));
-    // water surface plane — sits at the water level top, gives the realistic flat-mirror look
+    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x08263d,roughness:0.4,metalness:0.0,transparent:true,opacity:0.92,depthWrite:false}));
+    // water surface plane — highly reflective, sits at water level, catches the light
     const surfGeo=new THREE.PlaneGeometry(d.length*0.99,d.width*0.99);
-    const surfMat=new THREE.MeshStandardMaterial({color:0x3da8e0,roughness:0.08,metalness:0.18,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false});
+    const surfMat=new THREE.MeshStandardMaterial({color:0x55c8e8,roughness:0.01,metalness:0.5,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false});
     const wsurf=new THREE.Mesh(surfGeo,surfMat);
     wsurf.rotation.x=-Math.PI/2;  // flat horizontal
     water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
@@ -1108,7 +1096,7 @@ function buildMeshes(){
     const P=(al,h)=> ax==='x' ? new THREE.Vector3(seg.at,h,al) : new THREE.Vector3(al,h,seg.at);
     const mid=(zBot+zTop)/2;
     const sz = ax==='x' ? [0.05,Math.max(zTop-zBot,0.02),w] : [w,Math.max(zTop-zBot,0.02),0.05];
-    const fill=new THREE.Mesh(new THREE.BoxGeometry(...sz),new THREE.MeshBasicMaterial({color:0x7cc4ff,transparent:true,opacity:0.35}));
+    const fill=new THREE.Mesh(new THREE.BoxGeometry(...sz),new THREE.MeshBasicMaterial({transparent:true,opacity:0}));
     fill.position.copy(P(center,mid)); three.scene.add(fill); connObjs.push({obj:fill,kind:'opening',ref:i});
     const BL=P(left,zBot),BR=P(right,zBot),TL=P(left,zTop),TR=P(right,zTop);
     const ePts=[BL,BR, BL,TL, BR,TR]; if(!threeSided) ePts.push(TL,TR);
