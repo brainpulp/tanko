@@ -109,7 +109,7 @@
   .hint{color:var(--muted);font-size:10.5px;margin:4px 0 0}
   .empty{color:var(--muted);font-size:11px;padding:4px 0}
   details.section{margin:0}
-  details.section>summary{list-style:none;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:16px 0 6px;font-weight:600;padding:0}
+  details.section>summary{list-style:none;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#e07030;margin:16px 0 6px;font-weight:600;padding:0}
   details.section>summary::-webkit-details-marker{display:none}
   details.section>summary::before{content:'▶';font-size:7px;opacity:.45;flex-shrink:0;transition:transform .15s;line-height:1}
   details.section[open]>summary::before{transform:rotate(90deg)}
@@ -960,14 +960,38 @@ const grid=new THREE.GridHelper(80,80,0x6b86ad,0x44587a); grid.material.opacity=
 let camera=new THREE.OrthographicCamera(-10,10,10,-10,-1000,1000);
 const controls=new OrbitControls(camera,renderer.domElement);
 controls.enableDamping=false;
-controls.panSpeed=1.8;
-// pivot orbit around the scene point under the cursor (middle or right mouse button)
+controls.panSpeed=1.0;
+controls.enableZoom=false;   // replaced by cursor-zoom below
+
+// cursor-zoom: zoom toward the world point under the pointer
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.13 : 1/1.13;
+  const nd=ndc(e);
+  const before=new THREE.Vector3(nd.x,nd.y,0).unproject(camera);
+  camera.zoom=Math.max(0.04,Math.min(200,camera.zoom*f));
+  camera.updateProjectionMatrix();
+  const after=new THREE.Vector3(nd.x,nd.y,0).unproject(camera);
+  const delta=before.clone().sub(after);
+  camera.position.add(delta); controls.target.add(delta);
+  controls.update(); updateHandleScales();
+},{passive:false});
+
+// pivot orbit/pan around the scene point under the cursor (middle or right mouse)
+// move camera by same offset so the view doesn't jump when target changes
 canvas.addEventListener('mousedown', e=>{
   if(e.button!==1&&e.button!==2) return;
   ray.setFromCamera(ndc(e),camera);
   const hits=ray.intersectObjects([...pickChambers,...handles],true);
-  if(hits.length){ controls.target.copy(hits[0].point); }
-  else { const gp=groundHit(e); if(gp) controls.target.copy(gp); }
+  let pt=null;
+  if(hits.length) pt=hits[0].point;
+  else { const gp=groundHit(e); if(gp) pt=gp; }
+  if(pt){
+    const off=camera.position.clone().sub(controls.target);
+    controls.target.copy(pt);
+    camera.position.copy(pt).add(off);
+    controls.update();
+  }
 },{capture:true});
 
 let world=new THREE.Group(); three.scene.add(world);
@@ -1035,13 +1059,18 @@ function buildMeshes(){
     wsurf.rotation.x=-Math.PI/2;  // flat horizontal
     water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
     waterMeshes[d.id]={mesh:water,surf:wsurf,d};
-    // label: color-matched, pinned just off the chamber's near end, with a leader line and per-index stagger
-    const off=0.5+(ci%3)*0.45;
-    const anchor=new THREE.Vector3(-d.length/2, d.rimZ, 0);
-    const labelLocal=new THREE.Vector3(-d.length/2-off, d.rimZ+hsz*4+(ci%2)*hsz*6, 0);
-    const spr=makeLabel(d.id,col); spr.position.copy(labelLocal); g.add(spr); labelSprites[d.id]=spr;
-    const leader=new THREE.Line(new THREE.BufferGeometry().setFromPoints([labelLocal,anchor]),
-      new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.45})); g.add(leader);
+    // label painted on each exterior wall face — whichever faces camera becomes visible
+    const labelTex=makeLabelTex(d.name||d.id, col);
+    const lmat=()=>new THREE.MeshBasicMaterial({map:labelTex,transparent:true,depthWrite:false});
+    const lw=d.length*0.7, lh2=d.depth*0.7, lz=d.width*0.7, cy2=d.floorZ+d.depth/2;
+    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lw,lh2),lmat()); // back (+Z face)
+    pB.position.set(0,cy2,d.width/2+0.01); g.add(pB);
+    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lw,lh2),lmat()); // front (-Z face)
+    pF.position.set(0,cy2,-d.width/2-0.01); pF.rotation.y=Math.PI; pF.scale.x=-1; g.add(pF);
+    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lz,lh2),lmat()); // right (+X face)
+    pR.position.set(d.length/2+0.01,cy2,0); pR.rotation.y=Math.PI/2; pR.scale.x=-1; g.add(pR);
+    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lz,lh2),lmat()); // left (-X face)
+    pL.position.set(-d.length/2-0.01,cy2,0); pL.rotation.y=-Math.PI/2; g.add(pL);
     world.add(g);
 
     // chamber handles
@@ -1189,7 +1218,8 @@ function addWall(d,side,x,y,z){
   const horiz = (side==='x1'||side==='x2');
   const geo=new THREE.BoxGeometry(horiz?hsz*0.4:d.length*0.5, hsz*0.4, horiz?d.width*0.5:hsz*0.4);
   const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b98a8,emissive:0x2a3340,depthTest:false,transparent:true,opacity:0.9}));
-  m.position.set(x,y,z); m.renderOrder=11; m.userData={kind:'wall',chamber:d.id,side};
+  m.position.set(x,y,z); m.renderOrder=11;
+  m.userData={kind:'wall',chamber:d.id,side, scaleMode:horiz?'xy':'yz'};
   handleGroup.add(m); handles.push(m);
 }
 // long thin bar handle spanning an edge from p0→p1 (like the wall-shift bars)
@@ -1199,7 +1229,7 @@ function addBarHandle(kind,data,p0,p1,color){
     new THREE.MeshLambertMaterial({color,emissive:color,emissiveIntensity:0.22,depthTest:false,transparent:true,opacity:0.95}));
   m.position.copy(p0.clone().add(p1).multiplyScalar(0.5));
   if(len>1e-4) m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize());
-  m.renderOrder=11; m.userData=Object.assign({kind},data); handleGroup.add(m); handles.push(m);
+  m.renderOrder=11; m.userData=Object.assign({kind,scaleMode:'xz'},data); handleGroup.add(m); handles.push(m);
   return m;
 }
 
@@ -1288,47 +1318,18 @@ function showSnapWall(c,at){
 }
 
 
-function makeLabel(text,color){
-  const cv=document.createElement('canvas'); cv.width=256; cv.height=64;
-  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true}));
-  spr.scale.set(2.4,0.6,1); spr.userData={cv,ctx:cv.getContext('2d'),texture:spr.material.map,color:color??0xe6edf3};
-  drawLabel(spr,text,''); return spr;
-}
-function drawLabel(spr,l1,l2){
-  const {cv,ctx,texture,color}=spr.userData;
-  const hex='#'+((color>>>0)&0xffffff).toString(16).padStart(6,'0');
-  ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='rgba(13,17,23,0.92)'; rr(ctx,2,2,252,60,8); ctx.fill();
-  ctx.fillStyle=hex; rr(ctx,4,6,7,52,3); ctx.fill();               // color accent bar
-  ctx.fillStyle=hex; ctx.font='bold 26px ui-monospace,monospace'; ctx.textBaseline='middle';
-  ctx.fillText(l1,20,l2?20:32);
-  if(l2){ ctx.fillStyle='#c9d4e0'; ctx.font='19px ui-monospace,monospace'; ctx.fillText(l2,20,46); }
-  texture.needsUpdate=true;
-}
-function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
-// keep chamber labels a constant on-screen size, and push overlapping ones apart
-// vertically in screen space each frame so parallel chambers never collide.
-function updateLabelScale(){
-  const hpx=canvas.clientHeight||1, wpx=canvas.clientWidth||1;
-  const worldPerPx=(camera.top-camera.bottom)/(camera.zoom||1)/hpx;
-  const H=42*worldPerPx;            // ~42px-tall label box (canvas is 256x64 → 4:1)
-  const up=camera.up.clone().normalize();
-  const items=[];
-  for(const id in labelSprites){ const s=labelSprites[id]; if(!s) continue;
-    s.scale.set(H*4,H,1);
-    if(!s.userData.basePos) s.userData.basePos=s.position.clone();
-    s.position.copy(s.userData.basePos);           // reset, then re-resolve overlaps
-    const w=new THREE.Vector3(); s.getWorldPosition(w); const v=w.clone().project(camera);
-    items.push({s, sx:(v.x+1)/2*wpx, sy:(1-v.y)/2*hpx});
-  }
-  items.sort((a,b)=>a.sy-b.sy);
-  const gapY=46, nearX=150;
-  for(let k=1;k<items.length;k++){ const a=items[k-1], b=items[k];
-    if(Math.abs(b.sx-a.sx)<nearX && b.sy-a.sy<gapY){
-      const push=gapY-(b.sy-a.sy);                  // move b further down-screen (−up)
-      b.s.position.addScaledVector(up,-push*worldPerPx); b.sy+=push;
-    }
-  }
+// canvas texture painted on exterior chamber walls instead of floating sprites
+function makeLabelTex(text, color){
+  const sz=256, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
+  const ctx=cv.getContext('2d');
+  const hex='#'+(color&0xffffff).toString(16).padStart(6,'0');
+  ctx.clearRect(0,0,sz,sz);
+  ctx.globalAlpha=0.6;
+  ctx.fillStyle=hex;
+  ctx.font=`bold ${text.length>2?70:110}px system-ui,sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text.substring(0,5),sz/2,sz/2);
+  return new THREE.CanvasTexture(cv);
 }
 
 // which chamber(s) a handle/valve belongs to — used to reveal handles only for the selected chamber
@@ -1347,6 +1348,19 @@ function handleChambers(u){
 function updateSelectionHighlight(){
   for(const id in chamberEdges){ const e=chamberEdges[id], sel=String(id)===String(selected);
     e.edge.material.color.set(sel?0xffffff:e.color); e.edge.material.opacity=sel?1:0.55; }
+}
+// scale all handles so they appear constant on-screen regardless of camera zoom.
+// fixed-size handles (scaleMode='all') scale uniformly; world-spanning wall bars
+// only scale their cross-section axes so their length stays in world space.
+function updateHandleScales(){
+  const s=1/(camera.zoom||1);
+  for(const h of handles){
+    const sm=h.userData.scaleMode||'all';
+    if(sm==='all') h.scale.setScalar(s);
+    else if(sm==='xy') h.scale.set(s,s,1);   // wall bar spanning Z
+    else if(sm==='yz') h.scale.set(1,s,s);   // wall bar spanning X
+    else if(sm==='xz') h.scale.set(s,1,s);   // bar handle spanning local Y
+  }
 }
 function updateHandleVis(mode){
   const vert = mode!=='top';   // rim/floor vertical-ish
@@ -1392,6 +1406,7 @@ function applyCam(mode){
   else if(mode==='sideX'){ camera.position.set(cx+D,cy,cz); camera.up.set(0,1,0); controls.enableRotate=false; }
   else { camera.position.set(cx+D*0.8,cy+D*0.7,cz+D*0.8); camera.up.set(0,1,0); controls.enableRotate=true; }
   camera.lookAt(cx,cy,cz); camera.updateProjectionMatrix(); controls.update();
+  updateHandleScales();
 }
 
 /* ---------- interaction ---------- */
@@ -1686,7 +1701,6 @@ function updateScene(t){
       } else { wm.mesh.visible=false; if(wm.surf) wm.surf.visible=false; }
     }
     const p=result.per.find(x=>x.id===d.id), pct=p&&p.capToRim?Math.min(100,Math.round(100*vol/p.capToRim)):0;
-    drawLabel(labelSprites[d.id], d.id, `${vol.toFixed(1)}m³ ${pct}%`);
   }
   connObjs.forEach(o=>{
     let active=false;
@@ -1756,7 +1770,7 @@ function loop(ts){
     setTime(nt);
   } else lastTS=ts;
   controls.update();
-  updateLabelScale();
+  updateHandleScales();
   renderer.render(three.scene,camera);
 }
 
