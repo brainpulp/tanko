@@ -1141,18 +1141,15 @@ function buildMeshes(){
     waterMeshes[d.id]={mesh:water,surf:wsurf,d};
     // label painted on each exterior wall face — square planes so text is never stretched
     const lsz=Math.max(0.4, d.depth*0.7), cy2=d.floorZ+d.depth/2;
-    const texN=makeLabelTex(d.name||d.id, col, false);
-    const texF=makeLabelTex(d.name||d.id, col, true);
-    const lmat=tex=>new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false});
-    // camera default is at (+X,+Y,+Z) so pB(+Z normal) and pR(+X normal) face camera → need texF
-    // pF(-Z normal) and pL(-X normal) face away → need texN (UV already correct from that side)
-    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // +Z face
+    const tex=makeLabelTex(d.name||d.id, col);
+    const lmat=()=>new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false});
+    const pB=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat()); // +Z face
     pB.position.set(0,cy2,d.width/2+0.01); g.add(pB);
-    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // -Z face
+    const pF=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat()); // -Z face
     pF.position.set(0,cy2,-d.width/2-0.01); pF.rotation.y=Math.PI; g.add(pF);
-    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texF)); // +X face
+    const pR=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat()); // +X face
     pR.position.set(d.length/2+0.01,cy2,0); pR.rotation.y=Math.PI/2; g.add(pR);
-    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat(texN)); // -X face
+    const pL=new THREE.Mesh(new THREE.PlaneGeometry(lsz,lsz),lmat()); // -X face
     pL.position.set(-d.length/2-0.01,cy2,0); pL.rotation.y=-Math.PI/2; g.add(pL);
     world.add(g);
 
