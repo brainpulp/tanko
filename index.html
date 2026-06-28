@@ -14,9 +14,15 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px}
-  #app{display:grid;grid-template-columns:320px 1fr 340px;grid-template-rows:100vh;height:100vh}
-  .col{height:100vh;overflow:auto;border-right:1px solid var(--line)}
+  #app{display:flex;height:100vh;overflow:hidden}
+  .col{height:100vh;overflow:auto;border-right:1px solid var(--line);flex-shrink:0;position:relative}
   .col:last-child{border-right:none;border-left:1px solid var(--line)}
+  #center{flex:1;min-width:0;flex-shrink:1;overflow:hidden}
+  #left,#right{min-width:0;overflow:hidden}
+  .splitter{width:6px;background:var(--line);cursor:col-resize;flex-shrink:0;position:relative;z-index:10}
+  .spltoggle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;cursor:pointer;user-select:none;color:var(--muted);line-height:1}
+  .spltoggle:hover{color:var(--accent);border-color:var(--accent)}
+  .splitter.dragging .spltoggle,.splitter:hover .spltoggle{color:var(--accent)}
   .pad{padding:12px 12px 40px}
   h1{font-size:15px;margin:0 0 2px}
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:16px 0 6px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
@@ -125,7 +131,7 @@
 <body>
 <div id="app">
   <!-- LEFT: editor -->
-  <div class="col" id="left">
+  <div class="col" id="left" style="width:320px">
     <div class="pad">
       <h1>Tanko</h1>
       <p class="sub">3D chamber flow simulator</p>
@@ -198,8 +204,9 @@
     </div>
   </div>
 
+  <div class="splitter" id="splL"><span class="spltoggle" id="collapseLeft">◀</span></div>
   <!-- CENTER: viewport -->
-  <div class="col" id="center" style="overflow:hidden">
+  <div class="col" id="center" style="overflow:hidden;flex-shrink:1">
     <div id="view">
       <div id="canvasWrap">
         <canvas id="cv"></canvas>
@@ -249,8 +256,9 @@
     </div>
   </div>
 
+  <div class="splitter" id="splR"><span class="spltoggle" id="collapseRight">▶</span></div>
   <!-- RIGHT: results -->
-  <div class="col" id="right">
+  <div class="col" id="right" style="width:340px">
     <div class="pad">
       <h2>System</h2>
       <div id="totals"></div>
@@ -780,11 +788,14 @@ function sel(label, value, opts, on){
 }
 function renderEditor(){
   const ids = scene.chambers.map(c=>c.id);
+  const nameOf=id=>{ const c=scene.chambers.find(x=>x.id===id); return (c&&(c.name||c.id))||id; };
+  const hexCol=n=>'#'+(n>>>0).toString(16).padStart(6,'0');
+  const colInput=(val,onChange)=>{ const id='ci'+Math.random().toString(36).slice(2,6); setTimeout(()=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',()=>onChange(parseInt(el.value.slice(1),16))); },0); return `<input type="color" id="${id}" value="${hexCol(val)}" style="width:26px;height:22px;padding:1px;border:1px solid var(--line);border-radius:4px;background:#0b0f15;cursor:pointer;vertical-align:middle">`; };
 
   const cr=$('#chamberRows'); cr.innerHTML='';
   scene.chambers.forEach((c,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
-    card.innerHTML=`<div class="top"><b>${c.id}</b><button class="tiny" data-del>✕</button></div>
+    card.innerHTML=`<div class="top"><b>${c.id}</b>${colInput(c.color??PALETTE[i%PALETTE.length],v=>{c.color=v;recompute();})}<button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(4,1fr)">
         ${field('name',c.name??'',el=>{c.name=el.value;recompute();},'style="text-align:left"')}
         ${field('x',c.x,el=>{c.x=num(el.value);recompute();})}
@@ -803,7 +814,7 @@ function renderEditor(){
   if(!scene.openings.length) or.innerHTML='<div class="empty">none</div>';
   scene.openings.forEach((o,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
-    card.innerHTML=`<div class="top"><b>${o.a} ⇄ ${o.b}</b><button class="tiny" data-del>✕</button></div>
+    card.innerHTML=`<div class="top"><b>${nameOf(o.a)} ⇄ ${nameOf(o.b)}</b><button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(5,1fr)">
         ${sel('a',o.a,ids,el=>{o.a=el.value;recompute();})}
         ${sel('b',o.b,ids,el=>{o.b=el.value;recompute();})}
@@ -820,7 +831,7 @@ function renderEditor(){
   scene.tubes.forEach((t,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
     const vid='v'+i;
-    card.innerHTML=`<div class="top"><b>${t.from} → ${t.to}</b>
+    card.innerHTML=`<div class="top"><b>${nameOf(t.from)} → ${nameOf(t.to)}</b>
         <span class="valve ${t.open!==false?'open':'shut'}" id="${vid}">${t.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(5,1fr)">
@@ -840,7 +851,7 @@ function renderEditor(){
   scene.inflows.forEach((f,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
     const vid='if'+i;
-    card.innerHTML=`<div class="top"><b>→ ${f.to}</b>
+    card.innerHTML=`<div class="top"><b>→ ${nameOf(f.to)}</b>
         <span class="valve ${f.open!==false?'open':'shut'}" id="${vid}">${f.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(2,1fr)">
@@ -862,7 +873,7 @@ function renderEditor(){
   scene.drains.forEach((d,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
     const vid='dv'+i;
-    card.innerHTML=`<div class="top"><b>${d.from} ↧</b>
+    card.innerHTML=`<div class="top"><b>${nameOf(d.from)} ↧</b>
         <span class="valve ${d.open!==false?'open':'shut'}" id="${vid}">${d.open!==false?'open':'shut'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
@@ -880,7 +891,7 @@ function renderEditor(){
   (scene.pumps||[]).forEach((p,i)=>{
     const card=document.createElement('div'); card.className='rowcard';
     const vid='pv'+i;
-    card.innerHTML=`<div class="top"><b>${p.from} ⇒ ${p.to}</b>
+    card.innerHTML=`<div class="top"><b>${nameOf(p.from)} ⇒ ${nameOf(p.to)}</b>
         <span class="valve ${p.open!==false?'open':'shut'}" id="${vid}">${p.open!==false?'on':'off'}</span>
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
@@ -911,7 +922,8 @@ function renderEditor(){
         <button class="tiny" data-actdel="${ai}">✕</button>
       </div>`).join('');
     card.innerHTML=`<div class="top">
-        <b style="color:#ff6b35">◆</b>
+        ${colInput(mk.color??0xff6b35,v=>{mk.color=v;recompute();})}
+        <b style="color:#ff6b35">◆ ${nameOf(mk.chamber)}</b>
         ${sel('ch',mk.chamber,ids,el=>{mk.chamber=el.value;recompute();})}
         <button class="tiny" data-del>✕</button></div>
       <div class="fields" style="grid-template-columns:repeat(3,1fr)">
@@ -1049,6 +1061,27 @@ let bounds=null, hsz=0.15;
 let selected=null;            // selected chamber id — only its edit handles are shown
 let chamberEdges={};          // id -> {edge, color} for selection highlighting
 const PALETTE=[0x4aa3ff,0x3fb950,0xe0883e,0xa371f7,0x56d4dd,0xf2c14e,0xf85149,0xbc8cff];
+let waterSurfTex=null;
+function makeWaterTex(){
+  const sz=256, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#091e35'; ctx.fillRect(0,0,sz,sz);
+  for(let i=0;i<10;i++){
+    const y0=i*sz/10;
+    const g=ctx.createLinearGradient(0,y0,sz,y0+sz/10);
+    const a=(i%2)?0.12:0.06;
+    g.addColorStop(0,'rgba(80,180,240,0)'); g.addColorStop(0.35,`rgba(100,200,255,${a})`);
+    g.addColorStop(0.65,`rgba(60,160,220,${a*0.6})`); g.addColorStop(1,'rgba(80,180,240,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,y0,sz,sz/10+3);
+  }
+  for(let i=0;i<30;i++){
+    const x=(Math.random()*sz)|0, y=(Math.random()*sz)|0, r=0.7+Math.random()*2;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(200,240,255,${0.3+Math.random()*0.5})`; ctx.fill();
+  }
+  const t=new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4); return t;
+}
 
 const cc = c => new THREE.Vector3(c.x+c.length/2, 0, c.y+c.width/2);
 function pathLen(pts){ let L=0; for(let i=0;i<pts.length-1;i++) L+=pts[i].distanceTo(pts[i+1]); return L; }
@@ -1082,7 +1115,7 @@ function buildMeshes(){
   const byId=new Map(result.chambers.map(d=>[d.id,d]));
 
   result.chambers.forEach((d,ci)=>{
-    const col=PALETTE[ci%PALETTE.length];
+    const col=d.color!=null?d.color:PALETTE[ci%PALETTE.length];
     const g=new THREE.Group(); g.position.set(d.x+d.length/2,0,d.y+d.width/2);
     const box=new THREE.BoxGeometry(d.length,d.depth,d.width);
     const wall=new THREE.LineSegments(new THREE.EdgesGeometry(box),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.7}));
@@ -1097,10 +1130,11 @@ function buildMeshes(){
     const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
     pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
     const wgeo=new THREE.BoxGeometry(d.length*0.99,1,d.width*0.99);
-    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x08263d,roughness:0.4,metalness:0.0,transparent:true,opacity:0.92,depthWrite:false}));
-    // water surface plane — highly reflective, sits at water level, catches the light
+    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x06182e,roughness:0.55,metalness:0.1,transparent:true,opacity:0.94,depthWrite:false}));
+    // water surface plane — rippled texture + high metalness for reflections
+    if(!waterSurfTex) waterSurfTex=makeWaterTex();
     const surfGeo=new THREE.PlaneGeometry(d.length*0.99,d.width*0.99);
-    const surfMat=new THREE.MeshStandardMaterial({color:0x55c8e8,roughness:0.01,metalness:0.5,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false});
+    const surfMat=new THREE.MeshStandardMaterial({color:0x2a8fc0,map:waterSurfTex,roughness:0.04,metalness:0.7,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false,envMapIntensity:1.5});
     const wsurf=new THREE.Mesh(surfGeo,surfMat);
     wsurf.rotation.x=-Math.PI/2;  // flat horizontal
     water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
@@ -1237,7 +1271,7 @@ function buildMeshes(){
   (scene.markers||[]).forEach((mk,mi)=>{
     const c=byId.get(mk.chamber); if(!c) return;
     const mz=mk.z??c.floorZ;
-    const col=0xff6b35;
+    const col=mk.color??0xff6b35;
     const pts=[
       new THREE.Vector3(c.x,mz,c.y), new THREE.Vector3(c.x+c.length,mz,c.y),
       new THREE.Vector3(c.x+c.length,mz,c.y), new THREE.Vector3(c.x+c.length,mz,c.y+c.width),
@@ -1856,6 +1890,9 @@ function loop(ts){
   } else lastTS=ts;
   controls.update();
   updateHandleScales();
+  // animate water surface UV
+  const _wt=ts*0.00007;
+  for(const _wm of Object.values(waterMeshes)){ if(_wm.surf.visible && _wm.surf.material.map){ _wm.surf.material.map.offset.set(_wt%1,(_wt*0.55)%1); } }
   renderer.render(three.scene,camera);
 }
 
@@ -1872,7 +1909,7 @@ $('#addOpening').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two ch
 $('#addTube').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const a=scene.chambers[0],b=scene.chambers[1]; scene.tubes.push({from:a.id,to:b.id,fromZ:a.floorZ,toZ:b.floorZ,fromAt:wallAttach(a,b),toAt:wallAttach(b,a),diameter:0.3,open:true}); recompute(); };
 $('#addInflow').onclick=()=>{ if(!scene.chambers.length)return; scene.inflows.push({to:scene.chambers[0].id,rate:5,open:true}); recompute(); };
 $('#addDrain').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; scene.drains.push({from:c.id,z:c.floorZ,diameter:0.2,open:true}); recompute(); };
-$('#addPump').onclick=()=>{ setTool('pump'); };
+$('#addPump').onclick=()=>{ if(scene.chambers.length<2){showWarn('need two chambers');return;} const _pa=scene.chambers[0],_pb=scene.chambers[1]; if(!scene.pumps)scene.pumps=[]; scene.pumps.push({from:_pa.id,to:_pb.id,fromAt:wallAttach(_pa,_pb),toAt:wallAttach(_pb,_pa),rate:5,open:true}); recompute(); };
 $('#addMarker').onclick=()=>{ if(!scene.chambers.length)return; const c=scene.chambers[0]; if(!scene.markers)scene.markers=[]; scene.markers.push({chamber:c.id,z:c.floorZ+c.depth*0.5,trigger:'above',actions:[]}); recompute(); };
 // prevent add buttons from toggling their collapsible section
 document.querySelectorAll('details.section > summary button').forEach(b =>
@@ -1913,6 +1950,45 @@ function runTests(){
   const bar=$('#testbar'); bar.className='testbar '+(pass===all?'test-pass':'test-fail');
   bar.innerHTML=`engine self-test: ${pass}/${all} pass`+(pass===all?' ✓':' ✗ '+cs.filter(c=>!c[1]).map(c=>c[0]).join(', '));
 }
+
+/* sidebar collapse + resize */
+(function initSidebars(){
+  const left=$('#left'), right=$('#right');
+  const splL=$('#splL'), splR=$('#splR');
+  let lw=320, rw=340;
+  const colL=$('#collapseLeft'), colR=$('#collapseRight');
+  colL.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(parseInt(left.style.width||lw)>30){ lw=parseInt(left.style.width)||lw; left.style.width='0'; colL.textContent='▶'; }
+    else { left.style.width=lw+'px'; colL.textContent='◀'; }
+    resize();
+  });
+  colR.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(parseInt(right.style.width||rw)>30){ rw=parseInt(right.style.width)||rw; right.style.width='0'; colR.textContent='◀'; }
+    else { right.style.width=rw+'px'; colR.textContent='▶'; }
+    resize();
+  });
+  function makeDrag(sp, getPanel, dir){
+    let sx, sw;
+    sp.addEventListener('pointerdown',e=>{
+      if(e.target===colL||e.target===colR) return;
+      sx=e.clientX; const p=getPanel(); sw=parseInt(p.style.width)||parseInt(getComputedStyle(p).width)||320;
+      sp.setPointerCapture(e.pointerId); sp.classList.add('dragging');
+    });
+    sp.addEventListener('pointermove',e=>{
+      if(!sp.hasPointerCapture(e.pointerId)) return;
+      const p=getPanel(); const nw=Math.max(0,sw+dir*(e.clientX-sx)); p.style.width=nw+'px';
+      if(dir>0){ lw=nw; if(nw>30) colL.textContent='◀'; else colL.textContent='▶'; }
+      else { rw=nw; if(nw>30) colR.textContent='▶'; else colR.textContent='◀'; }
+      resize();
+    });
+    sp.addEventListener('pointerup',e=>{ sp.releasePointerCapture(e.pointerId); sp.classList.remove('dragging'); });
+    sp.addEventListener('pointercancel',e=>{ sp.releasePointerCapture(e.pointerId); sp.classList.remove('dragging'); });
+  }
+  makeDrag(splL,()=>left,1);
+  makeDrag(splR,()=>right,-1);
+})();
 
 /* boot */
 initProjects();                 // load/seed projects, set the active scene
