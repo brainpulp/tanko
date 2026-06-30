@@ -1075,26 +1075,60 @@ let bounds=null, hsz=0.15;
 let selected=null;            // selected chamber id — only its edit handles are shown
 let chamberEdges={};          // id -> {edge, color} for selection highlighting
 const PALETTE=[0x4aa3ff,0x3fb950,0xe0883e,0xa371f7,0x56d4dd,0xf2c14e,0xf85149,0xbc8cff];
-let waterSurfTex=null;
+let waterSurfTex=null, waterNormTex=null;
 function makeWaterTex(){
-  const sz=256, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
+  const sz=512, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
   const ctx=cv.getContext('2d');
-  ctx.fillStyle='#091e35'; ctx.fillRect(0,0,sz,sz);
-  for(let i=0;i<10;i++){
-    const y0=i*sz/10;
-    const g=ctx.createLinearGradient(0,y0,sz,y0+sz/10);
-    const a=(i%2)?0.12:0.06;
-    g.addColorStop(0,'rgba(80,180,240,0)'); g.addColorStop(0.35,`rgba(100,200,255,${a})`);
-    g.addColorStop(0.65,`rgba(60,160,220,${a*0.6})`); g.addColorStop(1,'rgba(80,180,240,0)');
-    ctx.fillStyle=g; ctx.fillRect(0,y0,sz,sz/10+3);
+  const id=ctx.createImageData(sz,sz); const d=id.data;
+  for(let y=0;y<sz;y++){
+    for(let x=0;x<sz;x++){
+      const nx=x/sz, ny=y/sz;
+      const w1=(Math.sin(nx*22+ny*8)*0.5+0.5);
+      const w2=(Math.sin(nx*9-ny*19)*0.5+0.5);
+      const w3=(Math.sin((nx+ny)*14)*0.5+0.5);
+      const v=w1*0.45+w2*0.35+w3*0.20;
+      const i=(y*sz+x)*4;
+      d[i]  =Math.round(6+v*55);
+      d[i+1]=Math.round(45+v*140);
+      d[i+2]=Math.round(95+v*155);
+      d[i+3]=255;
+    }
   }
-  for(let i=0;i<30;i++){
-    const x=(Math.random()*sz)|0, y=(Math.random()*sz)|0, r=0.7+Math.random()*2;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle=`rgba(200,240,255,${0.3+Math.random()*0.5})`; ctx.fill();
+  ctx.putImageData(id,0,0);
+  for(let i=0;i<80;i++){
+    const sx=(Math.random()*sz)|0, sy=(Math.random()*sz)|0, r=0.4+Math.random()*1.8;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(220,248,255,${0.5+Math.random()*0.5})`; ctx.fill();
   }
   const t=new THREE.CanvasTexture(cv);
-  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4); return t;
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); return t;
+}
+function makeWaterNormalTex(){
+  const sz=512, cv=document.createElement('canvas'); cv.width=sz; cv.height=sz;
+  const ctx=cv.getContext('2d');
+  const id=ctx.createImageData(sz,sz); const d=id.data;
+  const h=(nx,ny)=>{
+    const w1=(Math.sin(nx*22+ny*8)*0.5+0.5);
+    const w2=(Math.sin(nx*9-ny*19)*0.5+0.5);
+    const w3=(Math.sin((nx+ny)*14)*0.5+0.5);
+    return w1*0.45+w2*0.35+w3*0.20;
+  };
+  const eps=1/sz;
+  for(let y=0;y<sz;y++){
+    for(let x=0;x<sz;x++){
+      const nx=x/sz, ny=y/sz;
+      const dX=h(nx+eps,ny)-h(nx-eps,ny);
+      const dY=h(nx,ny+eps)-h(nx,ny-eps);
+      const i=(y*sz+x)*4;
+      d[i]  =Math.round(128-dX*700);
+      d[i+1]=Math.round(128-dY*700);
+      d[i+2]=255;
+      d[i+3]=255;
+    }
+  }
+  ctx.putImageData(id,0,0);
+  const t=new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); return t;
 }
 
 const cc = c => new THREE.Vector3(c.x+c.length/2, 0, c.y+c.width/2);
@@ -1144,11 +1178,12 @@ function buildMeshes(){
     const pick=new THREE.Mesh(new THREE.BoxGeometry(d.length,d.depth,d.width),new THREE.MeshBasicMaterial({visible:false}));
     pick.position.y=d.floorZ+d.depth/2; pick.userData={chamber:d.id}; g.add(pick); pickChambers.push(pick);
     const wgeo=new THREE.BoxGeometry(d.length*0.99,1,d.width*0.99);
-    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x06182e,roughness:0.55,metalness:0.1,transparent:true,opacity:0.94,depthWrite:false}));
-    // water surface plane — rippled texture + high metalness for reflections
+    const water=new THREE.Mesh(wgeo,new THREE.MeshStandardMaterial({color:0x0d3a5c,roughness:0.4,metalness:0.15,transparent:true,opacity:0.72,depthWrite:false}));
+    // water surface plane — sine-wave interference texture + normal map scrolling opposite direction
     if(!waterSurfTex) waterSurfTex=makeWaterTex();
+    if(!waterNormTex) waterNormTex=makeWaterNormalTex();
     const surfGeo=new THREE.PlaneGeometry(d.length*0.99,d.width*0.99);
-    const surfMat=new THREE.MeshStandardMaterial({color:0x2a8fc0,map:waterSurfTex,roughness:0.04,metalness:0.7,transparent:true,opacity:0.88,side:THREE.FrontSide,depthWrite:false,envMapIntensity:1.5});
+    const surfMat=new THREE.MeshStandardMaterial({color:0x1a8fc8,map:waterSurfTex,normalMap:waterNormTex,normalScale:new THREE.Vector2(0.7,0.7),roughness:0.02,metalness:0.55,transparent:true,opacity:0.84,side:THREE.FrontSide,depthWrite:false});
     const wsurf=new THREE.Mesh(surfGeo,surfMat);
     wsurf.rotation.x=-Math.PI/2;  // flat horizontal
     water.visible=false; wsurf.visible=false; g.add(water); g.add(wsurf);
@@ -1901,9 +1936,14 @@ function loop(ts){
   } else lastTS=ts;
   controls.update();
   updateHandleScales();
-  // animate water surface UV
-  const _wt=ts*0.00007;
-  for(const _wm of Object.values(waterMeshes)){ if(_wm.surf.visible && _wm.surf.material.map){ _wm.surf.material.map.offset.set(_wt%1,(_wt*0.55)%1); } }
+  // animate water surface: color map and normal map scroll in opposite directions
+  const _wt=ts*0.000085;
+  for(const _wm of Object.values(waterMeshes)){
+    if(!_wm.surf.visible) continue;
+    const _m=_wm.surf.material;
+    if(_m.map){ _m.map.offset.set(_wt%1,(_wt*0.65)%1); _m.map.needsUpdate=false; }
+    if(_m.normalMap){ _m.normalMap.offset.set((-_wt*0.75)%1,(_wt*0.45)%1); _m.normalMap.needsUpdate=false; }
+  }
   renderer.render(three.scene,camera);
 }
 
